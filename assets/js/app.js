@@ -84,6 +84,23 @@
     wrap.innerHTML = V.mobileModal();
     wrap.classList.remove("hidden");
   }
+  function openFournModal(id) {
+    const wrap = document.getElementById("modal");
+    wrap.innerHTML = V.nouveauFournModal(id);
+    wrap.classList.remove("hidden");
+    // lance une recherche auto avec le nom/SIRET pré-rempli
+    setTimeout(() => lancerRechercheFourn(id), 50);
+  }
+  async function lancerRechercheFourn(id) {
+    const input = document.getElementById("fournSearch");
+    const box = document.getElementById("fournResults");
+    if (!box) return;
+    const q = input ? input.value : "";
+    box.innerHTML = `<p class="text-sm text-slate-400 text-center py-6">🔎 Recherche data.gouv…</p>`;
+    const r = await PNG.utils.searchEntreprises(q, 6);
+    if (!r.ok) { box.innerHTML = `<p class="text-sm text-red-500 text-center py-6">Erreur : ${r.raison}</p>`; return; }
+    box.innerHTML = V.renderFournResults(id, r.results);
+  }
   function closeModal() {
     const wrap = document.getElementById("modal");
     wrap.classList.add("hidden");
@@ -165,7 +182,7 @@
 
   /* --------------------- Délégation d'événements ------------------- */
   document.addEventListener("click", (ev) => {
-    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-savefac],[data-saisirpaie],[data-verifbanque],[data-siren],[data-rappro],[data-rapprochoix],[data-unrappro],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#closeModal,#modalBack,#btnReset");
+    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-savefac],[data-saisirpaie],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#closeModal,#modalBack,#btnReset");
     if (!t) return;
 
     if (t.id === "modalBack" && ev.target.id === "modalBack") return closeModal();
@@ -208,10 +225,21 @@
     }
     if (t.dataset.siren) {
       toast("Recherche data.gouv en cours…", "#2563eb");
-      S.enrichirSiren(t.dataset.siren).then((r) => {
-        toast(r && r.found ? `Identifié : SIREN ${r.siren}` : `Non trouvé (${(r&&r.raison)||"?"})`, r && r.found ? "#059669" : "#64748b");
+      S.enrichirSiren(t.dataset.siren, true).then((r) => {
+        toast(r && r.found ? `Identifié : ${r.nom} (SIREN ${r.siren})` : `Non trouvé (${(r&&r.raison)||"?"})`, r && r.found ? "#059669" : "#64748b");
         openModal(t.dataset.siren); render();
       });
+      return;
+    }
+    if (t.dataset.newfourn) { openFournModal(t.dataset.newfourn); return; }
+    if (t.id === "btnFournSearch") { lancerRechercheFourn(t.dataset.id); return; }
+    if (t.dataset.pickent) {
+      try {
+        const data = JSON.parse(t.getAttribute("data-ent"));
+        S.appliquerEntreprise(t.dataset.pickent, data);
+        toast(`Fournisseur enregistré : ${data.nom}`, "#059669");
+        openModal(t.dataset.pickent); render();
+      } catch (err) { toast("Erreur sélection", "#dc2626"); }
       return;
     }
     if (t.id === "btnVerifPaie") { const n = S.verifierTousPaiements(); toast(n ? `${n} paiement(s) vérifié(s) en banque ✓` : "Aucun paiement en attente de vérification", n ? "#059669" : "#64748b"); render(); return; }

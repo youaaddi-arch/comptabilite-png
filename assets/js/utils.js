@@ -84,12 +84,20 @@ PNG.utils = (function () {
    * En cas d'absence de réseau (ouverture du fichier en local), échoue
    * proprement sans bloquer l'app.
    * ----------------------------------------------------------------- */
-  async function lookupEntreprise(nom) {
+  // Recherche par nom, SIREN ou SIRET. Le SIRET/SIREN est prioritaire car
+  // il donne la raison sociale OFFICIELLE (orthographe exacte).
+  async function lookupEntreprise(query, opts) {
+    opts = opts || {};
     if (typeof fetch !== "function") return { found: false, raison: "fetch indisponible" };
+    // priorité : SIRET (14) > SIREN (9) > nom
+    const siret = (opts.siret || "").replace(/\D/g, "");
+    const siren = (opts.siren || "").replace(/\D/g, "");
+    const q = siret.length === 14 ? siret : siren.length === 9 ? siren : query;
+    if (!q) return { found: false, raison: "aucun critère" };
     try {
       const ctrl = new AbortController();
-      const to = setTimeout(() => ctrl.abort(), 6000);
-      const res = await fetch(PNG.dataGouv.url(nom), { signal: ctrl.signal });
+      const to = setTimeout(() => ctrl.abort(), 7000);
+      const res = await fetch(PNG.dataGouv.url(q), { signal: ctrl.signal });
       clearTimeout(to);
       if (!res.ok) return { found: false, raison: "HTTP " + res.status };
       const data = await res.json();
@@ -100,13 +108,40 @@ PNG.utils = (function () {
         found: true,
         siren: r.siren,
         siret: s.siret || "",
-        nom: r.nom_complet || r.nom_raison_sociale || nom,
+        nom: r.nom_complet || r.nom_raison_sociale || query,
         naf: r.activite_principale || s.activite_principale || "",
         adresse: s.adresse || s.geo_adresse || "",
+        parSiret: siret.length === 14 || siren.length === 9, // identifié de façon fiable
         source: "recherche-entreprises.api.gouv.fr",
       };
     } catch (err) {
       return { found: false, raison: (err && err.name === "AbortError") ? "délai dépassé" : "réseau indisponible" };
+    }
+  }
+
+  // Recherche multi-résultats (pour le choix manuel d'un nouveau fournisseur)
+  async function searchEntreprises(query, n) {
+    if (typeof fetch !== "function") return { ok: false, raison: "fetch indisponible", results: [] };
+    if (!query || query.trim().length < 2) return { ok: false, raison: "requête trop courte", results: [] };
+    try {
+      const ctrl = new AbortController();
+      const to = setTimeout(() => ctrl.abort(), 7000);
+      const res = await fetch(PNG.dataGouv.urlMulti(query, n || 6), { signal: ctrl.signal });
+      clearTimeout(to);
+      if (!res.ok) return { ok: false, raison: "HTTP " + res.status, results: [] };
+      const data = await res.json();
+      const results = (data.results || []).map((r) => {
+        const s = r.siege || {};
+        return {
+          siren: r.siren, siret: s.siret || "",
+          nom: r.nom_complet || r.nom_raison_sociale || "",
+          naf: r.activite_principale || s.activite_principale || "",
+          adresse: s.adresse || s.geo_adresse || "",
+        };
+      });
+      return { ok: true, results };
+    } catch (err) {
+      return { ok: false, raison: (err && err.name === "AbortError") ? "délai dépassé" : "réseau indisponible", results: [] };
     }
   }
 
@@ -122,7 +157,7 @@ PNG.utils = (function () {
   return {
     fmtEUR, fmtNum, fmtPct, fmtDate, todayISO,
     companyById, planByNum, financeurByCode, fournisseurByNom,
-    recognizeCompany, proposeAccounting, lookupEntreprise, modePaiementByCode,
+    recognizeCompany, proposeAccounting, lookupEntreprise, searchEntreprises, modePaiementByCode,
     STATUT_FACTURE, STATUT_DOSSIER, STATUT_PAIEMENT, escapeHtml,
   };
 })();

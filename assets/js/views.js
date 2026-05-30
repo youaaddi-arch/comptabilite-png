@@ -410,8 +410,9 @@ PNG.views = (function () {
                    ${x.fournisseurNaf ? `<div class="flex justify-between"><span class="text-slate-400 text-xs">Code NAF</span><span>${e(x.fournisseurNaf)}</span></div>` : ""}
                    ${x.fournisseurAdresse ? `<div class="mt-1"><span class="text-slate-400 text-xs">Adresse du siège</span><p class="text-xs text-slate-600">${e(x.fournisseurAdresse)}</p></div>` : ""}
                    <p class="text-[10px] text-slate-400 mt-1">Source : ${e(x.fournisseurSource||"data.gouv")}</p>`
-                : `<div class="flex items-center justify-between"><span class="text-xs text-slate-500">Non identifié</span><button data-siren="${x.id}" class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg">🔎 Identifier via data.gouv</button></div>`}
+                : `<div class="flex items-center justify-between gap-2"><span class="text-xs text-slate-500">Non identifié</span><div class="flex gap-1"><button data-siren="${x.id}" class="text-xs bg-blue-600 text-white px-2.5 py-1.5 rounded-lg">🔎 Auto</button><button data-newfourn="${x.id}" class="text-xs bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg">＋ Nouveau fournisseur</button></div></div>`}
             </div>
+            ${x.fournisseurSiren ? `<button data-newfourn="${x.id}" class="text-xs text-blue-600 hover:underline mb-2">↻ Corriger / rechercher un autre fournisseur</button>` : ""}
             <a href="${e(x.driveUrl||"#")}" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:underline mb-2">📁 Voir dans le Drive <span class="text-slate-300">(archivage auto)</span></a>
 
             <h3 class="text-xs font-semibold text-slate-400 uppercase mb-2 mt-3">Compte comptable</h3>
@@ -852,5 +853,42 @@ PNG.views = (function () {
     </div>`;
   }
 
-  return { dashboard, dashboardCharts, factures, factureModal, collecte, banque, tvaView, financements, societes, plan, fonctionnalites, registre, aReglerView, fournisseurs, mobileModal, rapproManuelModal };
+  /* Modale : enregistrer un NOUVEAU fournisseur via data.gouv.
+   * Affiche un champ de recherche (pré-rempli avec le nom OCR / SIRET) et la
+   * liste des entreprises trouvées ; un clic crée la fiche fournisseur. */
+  function nouveauFournModal(factureId) {
+    const x = S.get().factures.find((f) => f.id === factureId);
+    if (!x) return "";
+    const q = x.fournisseurSiret || x.fournisseurSiren || x.fournisseur || "";
+    return `
+    <div class="fixed inset-0 bg-slate-900/50 z-40 flex items-center justify-center p-4" id="modalBack">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[88vh] overflow-y-auto" onclick="event.stopPropagation()">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <div><h2 class="font-bold text-slate-800">＋ Nouveau fournisseur</h2>
+          <p class="text-xs text-slate-400">Recherche officielle sur data.gouv (raison sociale, SIREN, SIRET, adresse du siège)</p></div>
+          <button id="closeModal" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+        </div>
+        <div class="p-5">
+          <div class="flex gap-2 mb-3">
+            <input id="fournSearch" data-id="${x.id}" value="${e(q)}" placeholder="Nom, SIREN ou SIRET…" class="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+            <button id="btnFournSearch" data-id="${x.id}" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Rechercher</button>
+          </div>
+          <p class="text-xs text-slate-400 mb-2">💡 Astuce : si le SIREN/SIRET est sur la facture, la raison sociale sera <strong>exacte</strong>.</p>
+          <div id="fournResults" class="space-y-2"><p class="text-sm text-slate-400 text-center py-6">Lancez une recherche pour voir les résultats data.gouv.</p></div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // Rendu d'une liste de résultats data.gouv (appelé par app.js après fetch)
+  function renderFournResults(factureId, results) {
+    if (!results || !results.length) return `<p class="text-sm text-slate-400 text-center py-6">Aucune entreprise trouvée. Affinez la recherche.</p>`;
+    return results.map((r) => `<button data-pickent="${factureId}" data-ent='${e(JSON.stringify(r))}' class="w-full text-left border border-slate-200 hover:border-blue-300 hover:bg-blue-50 rounded-lg px-3 py-2">
+      <p class="text-sm font-medium text-slate-700">${e(r.nom || "—")}</p>
+      <p class="text-xs text-slate-400">SIREN ${e(r.siren || "—")}${r.siret ? " · SIRET " + e(r.siret) : ""}${r.naf ? " · NAF " + e(r.naf) : ""}</p>
+      ${r.adresse ? `<p class="text-xs text-slate-500">${e(r.adresse)}</p>` : ""}
+    </button>`).join("");
+  }
+
+  return { dashboard, dashboardCharts, factures, factureModal, collecte, banque, tvaView, financements, societes, plan, fonctionnalites, registre, aReglerView, fournisseurs, mobileModal, rapproManuelModal, nouveauFournModal, renderFournResults };
 })();

@@ -457,6 +457,7 @@ PNG.dataGouv = {
   base: "https://recherche-entreprises.api.gouv.fr/search",
   // construit l'URL de recherche
   url: (q) => `https://recherche-entreprises.api.gouv.fr/search?q=${encodeURIComponent(q)}&page=1&per_page=1`,
+  urlMulti: (q, n) => `https://recherche-entreprises.api.gouv.fr/search?q=${encodeURIComponent(q)}&page=1&per_page=${n || 6}`,
 };
 
 /* ---------------------------------------------------------------------

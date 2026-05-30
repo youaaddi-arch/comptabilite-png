@@ -110,21 +110,44 @@ PNG.store = (function () {
     }).sort((a, b) => b.total - a.total);
   }
 
-  // Enrichit une facture via data.gouv (nom -> SIREN). Asynchrone.
-  async function enrichirSiren(factureId) {
+  // Enrichit une facture via data.gouv. Priorité au SIRET/SIREN lu sur la
+  // facture (raison sociale officielle), sinon recherche par nom.
+  // Si corrigerNom=true, remplace le nom OCR par la raison sociale officielle.
+  async function enrichirSiren(factureId, corrigerNom) {
     ensureShape();
     const f = state.factures.find((x) => x.id === factureId);
     if (!f) return null;
-    const r = await U.lookupEntreprise(f.fournisseur);
+    const r = await U.lookupEntreprise(f.fournisseur, { siret: f.fournisseurSiret, siren: f.fournisseurSiren });
     if (r.found) {
+      const ancienNom = f.fournisseur;
       f.fournisseurSiren = r.siren; f.fournisseurSiret = r.siret;
       f.fournisseurNaf = r.naf; f.fournisseurAdresse = r.adresse;
       f.fournisseurSource = r.source;
+      // Corrige l'orthographe du fournisseur si identifié de façon fiable (par SIRET/SIREN)
+      if ((corrigerNom || r.parSiret) && r.nom && r.nom.length > 1) {
+        f.fournisseur = r.nom;
+        f.driveUrl = PNG.drive.path(f.societeId, f.fournisseur, f.fichier);
+      }
       upsertFournisseur(f);
-      log("Fournisseur identifié (data.gouv)", `${f.fournisseur} → SIREN ${r.siren}`);
+      log("Fournisseur identifié (data.gouv)", `${ancienNom} → ${r.nom} (SIREN ${r.siren})${r.parSiret ? " [via SIRET/SIREN]" : ""}`);
       save();
     }
     return r;
+  }
+
+  // Applique une entreprise choisie (data.gouv) à une facture + crée la fiche
+  function appliquerEntreprise(factureId, data) {
+    ensureShape();
+    const f = state.factures.find((x) => x.id === factureId);
+    if (!f || !data) return null;
+    if (data.nom) { f.fournisseur = data.nom; f.driveUrl = PNG.drive.path(f.societeId, f.fournisseur, f.fichier); }
+    f.fournisseurSiren = data.siren || ""; f.fournisseurSiret = data.siret || "";
+    f.fournisseurNaf = data.naf || ""; f.fournisseurAdresse = data.adresse || "";
+    f.fournisseurSource = "recherche-entreprises.api.gouv.fr";
+    const fo = upsertFournisseur(f);
+    log("Nouveau fournisseur enregistré", `${f.fournisseur} (SIREN ${data.siren || "?"})`);
+    save();
+    return fo;
   }
 
   function log(action, detail) {
@@ -653,7 +676,7 @@ PNG.store = (function () {
     scanNouvelleFacture, deposerMobile, creerDepuisOCR,
     recevoirEmail, traiterEmail, traiterTousEmails, detecterDoublon,
     saisirPaiement, marquerPaye, verifierPaiementBanque, verifierTousPaiements,
-    enrichirSiren, fournisseurDossiers, rebuildFournisseurs,
+    enrichirSiren, appliquerEntreprise, fournisseurDossiers, rebuildFournisseurs,
     suggestionsPour, rapprocher, annulerRapprochement, rapprochementAuto, synchroniserBanque,
     tresorerie, tresorerieTotale, flux, facturesAValider, tauxRapprochement, tva,
     caParSociete, repartitionFinanceurs, serieFlux,
