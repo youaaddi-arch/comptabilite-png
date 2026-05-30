@@ -30,6 +30,13 @@ PNG.views = (function () {
     const c = U.companyById(id); if (!c) return "—";
     return `<span class="inline-flex items-center gap-1.5 text-sm"><span class="w-2.5 h-2.5 rounded-full" style="background:${c.couleur}"></span>${e(c.raisonSociale)}</span>`;
   }
+  // Bandeau indiquant la vue courante (société sélectionnée ou globale)
+  function scopeBanner() {
+    const id = S.getScope();
+    if (!id) return `<div class="inline-flex items-center gap-2 text-xs text-slate-500 bg-slate-100 rounded-full px-3 py-1 mb-3">🌐 Vue globale — toutes les sociétés</div>`;
+    const c = U.companyById(id); if (!c) return "";
+    return `<div class="inline-flex items-center gap-2 text-xs font-medium rounded-full px-3 py-1 mb-3" style="background:${c.couleur}1a;color:${c.couleur}"><span class="w-2 h-2 rounded-full" style="background:${c.couleur}"></span>Vue : ${e(c.raisonSociale)}</div>`;
+  }
   function modePaiementOptions(sel) {
     return `<option value="">— mode —</option>` + (PNG.modesPaiement || []).map((m) => `<option value="${m.code}" ${m.code === sel ? "selected" : ""}>${m.icon} ${m.libelle}</option>`).join("");
   }
@@ -38,9 +45,16 @@ PNG.views = (function () {
     const sp = U.STATUT_PAIEMENT[x.statutPaiement] || U.STATUT_PAIEMENT.a_payer;
     if (x.statutPaiement === "paye_verifie") {
       const mp = U.modePaiementByCode(x.modePaiement);
+      const reglePar = x.regleParSocieteId ? (U.companyById(x.regleParSocieteId) || {}) : null;
       return `<div class="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-sm text-emerald-800">
         ✓ <strong>Payé et rapproché en banque</strong><br>
-        <span class="text-xs">${mp ? mp.icon + " " + mp.libelle : "mode ?"} · le ${U.fmtDate(x.datePaiement)} · vérifié sur le relevé</span></div>`;
+        <span class="text-xs">${mp ? mp.icon + " " + mp.libelle : "mode ?"}</span>
+        <div class="grid grid-cols-2 gap-1 mt-2 text-xs text-slate-600">
+          <span>Date règlement : <strong>${U.fmtDate(x.dateReglement || x.datePaiement)}</strong></span>
+          <span>Date décaissement : <strong>${U.fmtDate(x.dateDecaissement)}</strong></span>
+        </div>
+        ${reglePar ? `<div class="mt-2 text-xs bg-violet-100 text-violet-700 rounded px-2 py-1">↔ Réglé par une autre société du groupe : <strong>${e(reglePar.raisonSociale)}</strong></div>` : ""}
+      </div>`;
     }
     if (x.statutPaiement === "paye_attente") {
       const mp = U.modePaiementByCode(x.modePaiement);
@@ -49,6 +63,7 @@ PNG.views = (function () {
           <p class="text-xs text-slate-500 mt-1">Saisi : ${mp ? mp.icon + " " + mp.libelle : "mode ?"} · le ${U.fmtDate(x.datePaiement)}</p>
         </div>
         <button data-verifbanque="${x.id}" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">🏦 Vérifier le paiement en banque &amp; rapprocher</button>
+        <p class="text-[10px] text-slate-400 mt-1">Si le règlement n'est pas trouvé sur la banque de cette société, le logiciel cherche aussi dans les <strong>autres sociétés du groupe</strong>.</p>
         <button data-paye="${x.id}" data-val="0" class="w-full mt-2 bg-white text-slate-500 border border-slate-200 px-4 py-2 rounded-xl text-xs">Annuler le paiement</button>`;
     }
     // à payer : saisie
@@ -87,9 +102,10 @@ PNG.views = (function () {
       }).join("");
 
     return `
+      ${scopeBanner()}
       <div class="mb-6">
         <h1 class="text-2xl font-bold text-slate-800">Tableau de bord</h1>
-        <p class="text-slate-500 text-sm">KPI quotidiens — Groupe Paris Nord · ${U.fmtDate(today)}</p>
+        <p class="text-slate-500 text-sm">KPI quotidiens — ${S.getScope() ? (U.companyById(S.getScope())||{}).raisonSociale : "Groupe Paris Nord"} · ${U.fmtDate(today)}</p>
       </div>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
@@ -188,7 +204,7 @@ PNG.views = (function () {
 
   function factures(filter) {
     const f = filter || "a_saisir";
-    const all = S.get().factures;
+    const all = S.get().factures.filter(S.inScope);
     // filtre principal : dossier (a_saisir / valide / tous) OU origine (src:email…)
     let list;
     if (f === "tous") list = all;
@@ -221,6 +237,7 @@ PNG.views = (function () {
     const enAttente = S.emailsEnAttente();
 
     return `
+      ${scopeBanner()}
       <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div><h1 class="text-2xl font-bold text-slate-800">Factures fournisseurs</h1>
         <p class="text-slate-500 text-sm">Toutes les factures arrivent ici, d'où qu'elles viennent : email, app mobile, saisie directe, récupération en ligne.</p></div>
@@ -408,7 +425,7 @@ PNG.views = (function () {
 
   /* ======================= BANQUE / RAPPROCHEMENT ================== */
   function banque() {
-    const txs = S.get().transactions.slice().sort((a, b) => b.date.localeCompare(a.date));
+    const txs = S.get().transactions.filter(S.inScope).slice().sort((a, b) => b.date.localeCompare(a.date));
     const taux = S.tauxRapprochement();
     const nonRappro = txs.filter((t) => !t.rapproche);
 
@@ -448,6 +465,7 @@ PNG.views = (function () {
     };
 
     return `
+      ${scopeBanner()}
       <div class="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div><h1 class="text-2xl font-bold text-slate-800">Banque & rapprochement</h1>
         <p class="text-slate-500 text-sm">Les écritures bancaires remontent automatiquement chaque jour. Rapprochez-les avec les factures (décaissements) et les dossiers (encaissements).</p></div>
@@ -510,7 +528,7 @@ PNG.views = (function () {
   /* ====================== FINANCEMENTS (ERP) ====================== */
   function financements(filter) {
     const f = filter || "tous";
-    const list = S.get().dossiers.filter((d) => f === "tous" ? true : d.financeurCode === f);
+    const list = S.get().dossiers.filter(S.inScope).filter((d) => f === "tous" ? true : d.financeurCode === f);
     const tab = (key, label) => `<button data-finfilter="${key}" class="px-3 py-1.5 rounded-lg text-sm font-medium ${f === key ? "bg-blue-600 text-white" : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"}">${label}</button>`;
     const rows = list.map((d) => {
       const fin = U.financeurByCode(d.financeurCode);
@@ -528,6 +546,7 @@ PNG.views = (function () {
     }).join("");
     const rf = S.repartitionFinanceurs();
     return `
+      ${scopeBanner()}
       <div class="mb-6"><h1 class="text-2xl font-bold text-slate-800">Financements & ERP</h1>
       <p class="text-slate-500 text-sm">Dossiers de financement · numéros OPCO / CPF / France Travail (POEI) · facturation</p></div>
       <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
@@ -629,54 +648,64 @@ PNG.views = (function () {
 
   /* ===================== REGISTRE DES FACTURES (grand tableau) ===== */
   function registre() {
-    const list = S.get().factures.slice().sort((a, b) => (b.dateFacture || "").localeCompare(a.dateFacture || ""));
+    const list = S.get().factures.filter(S.inScope).slice().sort((a, b) => (b.dateFacture || "").localeCompare(a.dateFacture || ""));
+    const d = (v) => v ? U.fmtDate(v) : `<span class="text-slate-300">—</span>`;
     const rows = list.map((x) => {
       const sp = U.STATUT_PAIEMENT[x.statutPaiement] || U.STATUT_PAIEMENT.a_payer;
       const mp = U.modePaiementByCode(x.modePaiement);
       const cpt = (U.planByNum(x.compteCharge) || {});
+      const reglePar = x.regleParSocieteId ? (U.companyById(x.regleParSocieteId) || {}) : null;
       return `<tr class="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" data-open="${x.id}">
-        <td class="py-2.5 pl-3"><div class="flex items-center gap-1.5"><span>${{email:"✉️",upload:"⬆︎",scan:"📷"}[x.source]||"📄"}</span><span class="text-sm font-medium text-slate-700">${e(x.fournisseur)}</span>${x.doublonDe?`<span class="text-[9px] bg-red-100 text-red-700 px-1 rounded">DBL</span>`:""}</div>
-          ${x.fournisseurSiren?`<span class="text-[10px] text-slate-400 font-mono ml-5">SIREN ${e(x.fournisseurSiren)}</span>`:""}</td>
-        <td class="py-2.5">${societeChip(x.societeId)}</td>
+        <td class="py-2.5 pl-3"><div class="flex items-center gap-1.5"><span>${{email:"✉️",upload:"⬆︎",scan:"📱",online:"🌐"}[x.source]||"📄"}</span><span class="text-sm font-medium text-slate-700">${e(x.fournisseur)}</span>${x.doublonDe?`<span class="text-[9px] bg-red-100 text-red-700 px-1 rounded">DBL</span>`:""}</div>
+          <span class="text-[10px] text-slate-400 ml-5">${societeChip(x.societeId)}</span></td>
         <td class="py-2.5 text-xs text-slate-500">${e(x.numeroFacture)}</td>
-        <td class="py-2.5 text-xs text-slate-500">${U.fmtDate(x.dateFacture)}</td>
+        <td class="py-2.5 text-xs">${d(x.dateFacture)}</td>
+        <td class="py-2.5 text-xs">${d(x.dateImport)}</td>
+        <td class="py-2.5 text-xs">${d(x.dateReglement)}</td>
+        <td class="py-2.5 text-xs">${d(x.dateDecaissement)}${reglePar?`<br><span class="text-[9px] bg-violet-100 text-violet-700 px-1 rounded" title="Réglé par une autre société du groupe">↔ ${e(reglePar.code||"")}</span>`:""}</td>
+        <td class="py-2.5 text-center text-xs">${mp?mp.icon+" "+mp.libelle.slice(0,4):"—"}</td>
         <td class="py-2.5 text-right text-sm">${U.fmtEUR(x.montantHT)}</td>
         <td class="py-2.5 text-right text-xs text-slate-500">${U.fmtEUR(x.montantTVA)}<br>${x.tauxTva}%</td>
         <td class="py-2.5 text-right text-sm font-medium">${U.fmtEUR(x.montantTTC)}</td>
-        <td class="py-2.5 text-center"><span class="font-mono text-xs">${e(x.compteCharge)}</span><br><span class="text-[10px] text-slate-400">${e((cpt.libelle||"").slice(0,18))}</span></td>
-        <td class="py-2.5 text-center text-xs">${mp?mp.icon:""} ${badge(sp.label, sp.cls)}</td>
+        <td class="py-2.5 text-center"><span class="font-mono text-xs">${e(x.compteCharge)}</span></td>
+        <td class="py-2.5 text-center text-xs">${badge(sp.label, sp.cls)}</td>
         <td class="py-2.5 text-center">${x.driveUrl?`<a href="${e(x.driveUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" class="text-blue-600" title="Drive">📁</a>`:""}</td>
       </tr>`;
     }).join("");
     const tHT = list.reduce((s,x)=>s+x.montantHT,0), tTVA=list.reduce((s,x)=>s+x.montantTVA,0), tTTC=list.reduce((s,x)=>s+x.montantTTC,0);
+    const scope = S.getScope();
     return `
-      <div class="flex items-center justify-between mb-6">
+      ${scopeBanner()}
+      <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div><h1 class="text-2xl font-bold text-slate-800">Registre des factures</h1>
-        <p class="text-slate-500 text-sm">Fournisseur · n° · date · HT · TVA · TTC · compte (plan comptable) · paiement · Drive</p></div>
+        <p class="text-slate-500 text-sm">Dates facture · import · règlement · décaissement (banque) · mode · HT · TVA · TTC · compte</p></div>
         <div class="flex gap-2">
           <button id="btnVerifPaie" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">🏦 Vérifier paiements (${S.paiementsAVerifier()})</button>
           <button id="btnDeposeMobile" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl text-sm font-medium">📱 Dépôt mobile</button>
         </div>
       </div>
       <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-x-auto">
-        <table class="w-full min-w-[900px]">
+        <table class="w-full min-w-[1100px]">
           <thead><tr class="text-[11px] text-slate-400 text-left bg-slate-50">
-            <th class="font-medium py-2 pl-3">Fournisseur</th><th class="font-medium py-2">Société</th><th class="font-medium py-2">N°</th><th class="font-medium py-2">Date</th>
+            <th class="font-medium py-2 pl-3">Fournisseur / société</th><th class="font-medium py-2">N°</th>
+            <th class="font-medium py-2">Date fact.</th><th class="font-medium py-2">Import</th><th class="font-medium py-2">Règlement</th><th class="font-medium py-2">Décaiss.</th>
+            <th class="font-medium py-2 text-center">Mode</th>
             <th class="font-medium py-2 text-right">HT</th><th class="font-medium py-2 text-right">TVA</th><th class="font-medium py-2 text-right">TTC</th>
-            <th class="font-medium py-2 text-center">Compte</th><th class="font-medium py-2 text-center">Paiement</th><th class="font-medium py-2 text-center">Drive</th>
+            <th class="font-medium py-2 text-center">Compte</th><th class="font-medium py-2 text-center">Statut</th><th class="font-medium py-2 text-center">Drive</th>
           </tr></thead>
-          <tbody>${rows}</tbody>
+          <tbody>${rows || `<tr><td colspan="13" class="text-center py-8 text-slate-400">Aucune facture</td></tr>`}</tbody>
           <tfoot><tr class="border-t-2 border-slate-200 bg-slate-50 font-semibold text-sm">
-            <td class="py-2.5 pl-3" colspan="4">TOTAL (${list.length} factures)</td>
+            <td class="py-2.5 pl-3" colspan="7">TOTAL (${list.length} factures)</td>
             <td class="py-2.5 text-right">${U.fmtEUR(tHT)}</td><td class="py-2.5 text-right">${U.fmtEUR(tTVA)}</td><td class="py-2.5 text-right">${U.fmtEUR(tTTC)}</td><td colspan="3"></td>
           </tr></tfoot>
         </table>
-      </div>`;
+      </div>
+      <p class="text-xs text-slate-400 mt-2">↔ = réglé par une autre société du groupe. La date de décaissement vient du rapprochement bancaire (peut différer de la date de règlement saisie).</p>`;
   }
 
   /* ===================== DOSSIERS FOURNISSEURS ===================== */
   function fournisseurs() {
-    const dossiers = S.fournisseurDossiers();
+    const dossiers = S.fournisseurDossiers().filter(S.inScope);
     const cards = dossiers.map((fo) => `
       <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
         <div class="flex items-start justify-between mb-2">
@@ -696,6 +725,7 @@ PNG.views = (function () {
         </div>
       </div>`).join("");
     return `
+      ${scopeBanner()}
       <div class="mb-6"><h1 class="text-2xl font-bold text-slate-800">Dossiers fournisseurs</h1>
       <p class="text-slate-500 text-sm">Fiches créées automatiquement à chaque nouvelle facture · compte tiers 401 · identification data.gouv</p></div>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">${cards || `<p class="text-slate-400">Aucun fournisseur.</p>`}</div>`;

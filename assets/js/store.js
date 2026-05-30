@@ -19,6 +19,15 @@ PNG.store = (function () {
   let state = null;
   const listeners = [];
 
+  /* Filtre global de société ("" = toutes / vue globale). Persistant. */
+  const SCOPE_KEY = "compta-png-scope";
+  let scope = "";
+  try { scope = localStorage.getItem(SCOPE_KEY) || ""; } catch (e) {}
+  const getScope = () => scope;
+  function setScope(id) { scope = id || ""; try { localStorage.setItem(SCOPE_KEY, scope); } catch (e) {} listeners.forEach((fn) => fn()); }
+  // applique le filtre société courant à une liste d'objets ayant societeId
+  const inScope = (o) => !scope || o.societeId === scope;
+
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
@@ -50,6 +59,10 @@ PNG.store = (function () {
     state.factures.forEach((f) => {
       if (f.statutPaiement === undefined) f.statutPaiement = f.paye ? "paye_attente" : "a_payer";
       if (f.driveUrl === undefined) f.driveUrl = PNG.drive.path(f.societeId, f.fournisseur, f.fichier);
+      if (f.dateImport === undefined) f.dateImport = f.dateDepot || null;
+      if (f.dateReglement === undefined) f.dateReglement = f.datePaiement || null;
+      if (f.dateDecaissement === undefined) f.dateDecaissement = (f.rapproche && f.statutPaiement === "paye_verifie") ? (f.datePaiement || null) : null;
+      if (f.regleParSocieteId === undefined) f.regleParSocieteId = null;
     });
   }
 
@@ -193,7 +206,8 @@ PNG.store = (function () {
       fichier: opts.fichier || `scan_${U.todayISO().replace(/-/g, "")}_${100000 + Math.floor(Math.random() * 899999)}.pdf`,
       source: opts.source || "upload",      // upload | email | scan
       sourceEmail: opts.sourceEmail || null,
-      dateDepot: U.todayISO(), statut: "a_valider",
+      dateDepot: U.todayISO(), dateImport: U.todayISO(), statut: "a_valider",
+      dateReglement: null, dateDecaissement: null, regleParSocieteId: null,
       fournisseur: m.fournisseur, categorie: f ? f.categorie : "Divers",
       societeId: reco.societeId || m.soc, societeConfiance: reco.confiance,
       numeroFacture: opts.numeroFacture || ("AUTO-" + (10000 + n)),
@@ -346,9 +360,16 @@ PNG.store = (function () {
     ensureShape();
     const f = state.factures.find((x) => x.id === factureId);
     if (!f) return { ok: false, raison: "facture introuvable" };
-    const tx = state.transactions.find((t) => !t.rapproche && t.sens === "debit"
-      && t.societeId === f.societeId && Math.abs(Math.abs(t.montant) - f.montantTTC) < 0.01);
-    if (!tx) return { ok: false, raison: "aucune écriture bancaire correspondante" };
+    const matchMontant = (t) => !t.rapproche && t.sens === "debit" && Math.abs(Math.abs(t.montant) - f.montantTTC) < 0.01;
+    // 1) banque de la société de la facture
+    let tx = state.transactions.find((t) => t.societeId === f.societeId && matchMontant(t));
+    let interSociete = false;
+    // 2) sinon : règlement par UNE AUTRE de nos sociétés (boîtes du groupe)
+    if (!tx) {
+      tx = state.transactions.find((t) => matchMontant(t));
+      if (tx) interSociete = true;
+    }
+    if (!tx) return { ok: false, raison: "aucune écriture bancaire correspondante (ni dans les autres sociétés du groupe)" };
     // contrôle du mode de paiement via le libellé bancaire
     let modeOk = true, modeDetecte = f.modePaiement;
     if (f.modePaiement) {
@@ -360,12 +381,22 @@ PNG.store = (function () {
     }
     // rapproche + comptabilise
     tx.rapproche = true; tx.lienType = "facture"; tx.lienId = f.id;
-    f.rapproche = true; f.paye = true; f.datePaiement = f.datePaiement || tx.date;
+    f.rapproche = true; f.paye = true;
+    f.dateReglement = f.datePaiement || tx.date;     // date de règlement (saisie ou banque)
+    f.dateDecaissement = tx.date;                    // date réelle de sortie en banque
+    f.datePaiement = f.datePaiement || tx.date;
     f.statutPaiement = "paye_verifie";
+    // règlement par une autre société du groupe
+    if (interSociete) {
+      f.regleParSocieteId = tx.societeId;
+      log("Réglé par une autre société du groupe", `${f.fournisseur} · payé par ${U.companyById(tx.societeId) ? U.companyById(tx.societeId).code : tx.societeId} (facture de ${U.companyById(f.societeId) ? U.companyById(f.societeId).code : f.societeId})`);
+    } else {
+      f.regleParSocieteId = null;
+    }
     if (f.statut !== "comptabilise") comptabiliser(f.id);
-    log("Paiement vérifié en banque", `${f.fournisseur} · ${U.fmtEUR(f.montantTTC)} · ${tx.libelle}${modeOk ? "" : " (mode différent !)"}`);
+    log("Paiement vérifié en banque", `${f.fournisseur} · ${U.fmtEUR(f.montantTTC)} · ${tx.libelle}${modeOk ? "" : " (mode différent !)"}${interSociete ? " · INTER-SOCIÉTÉS" : ""}`);
     save();
-    return { ok: true, tx, modeOk, modeDetecte };
+    return { ok: true, tx, modeOk, modeDetecte, interSociete, regleParSocieteId: tx.societeId };
   }
 
   // Lance la vérification bancaire sur toutes les factures "payé en attente"
@@ -547,6 +578,7 @@ PNG.store = (function () {
 
   return {
     load, reset, save, subscribe, get, SOLDES_INIT, log,
+    getScope, setScope, inScope,
     setFactureSociete, setFactureCompte, validerBrouillon, comptabiliser,
     scanNouvelleFacture, deposerMobile,
     recevoirEmail, traiterEmail, traiterTousEmails, detecterDoublon,

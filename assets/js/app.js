@@ -38,9 +38,20 @@
     }).join("");
   }
 
+  function renderGlobalSoc() {
+    const sel = document.getElementById("globalSoc");
+    if (!sel) return;
+    const scope = S.getScope();
+    const opts = [`<option value="">🌐 Vue globale (toutes les sociétés)</option>`]
+      .concat(PNG.companies.filter((c) => S.SOLDES_INIT[c.id]).map((c) => `<option value="${c.id}" ${c.id === scope ? "selected" : ""}>${c.raisonSociale}</option>`))
+      .concat(PNG.companies.filter((c) => !S.SOLDES_INIT[c.id]).map((c) => `<option value="${c.id}" ${c.id === scope ? "selected" : ""}>${c.raisonSociale}</option>`));
+    sel.innerHTML = opts.join("");
+  }
+
   function render() {
     current = parseHash();
     renderSidebar();
+    renderGlobalSoc();
     const view = document.getElementById("view");
     let html = "";
     switch (current.route) {
@@ -115,8 +126,10 @@
     }
     if (t.dataset.verifbanque) {
       const r = S.verifierPaiementBanque(t.dataset.verifbanque);
-      if (r.ok) toast(`Paiement vérifié en banque ✓${r.modeOk === false ? " (⚠︎ mode différent du relevé)" : ""}`, r.modeOk === false ? "#ea580c" : "#059669");
-      else toast("Aucune écriture bancaire correspondante", "#dc2626");
+      if (r.ok) {
+        const inter = r.interSociete ? ` ↔ réglé par ${(PNG.utils.companyById(r.regleParSocieteId)||{}).code || "une autre société"}` : "";
+        toast(`Paiement vérifié en banque ✓${inter}${r.modeOk === false ? " (⚠︎ mode différent)" : ""}`, r.interSociete ? "#7c3aed" : (r.modeOk === false ? "#ea580c" : "#059669"));
+      } else toast("Aucun règlement trouvé (ni dans les autres sociétés)", "#dc2626");
       openModal(t.dataset.verifbanque); render(); return;
     }
     if (t.dataset.siren) {
@@ -187,6 +200,7 @@
       const d = document.getElementById("mobPaieDetails");
       if (d) d.classList.toggle("hidden", el.value !== "paye");
     }
+    if (el.id === "globalSoc") { S.setScope(el.value); render(); }
   });
 
   window.addEventListener("hashchange", render);
