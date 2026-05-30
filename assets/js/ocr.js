@@ -97,7 +97,7 @@ PNG.ocr = (function () {
   function reparerEspaces(s) {
     if (!s) return s;
     s = s.replace(/\b(?:[A-Za-zÀ-ÿ]\s){2,}[A-Za-zÀ-ÿ]\b/g, (m) => m.replace(/\s+/g, ""));
-    s = s.replace(/\b([A-Za-zÀ-ÿ]{2,})\s([a-zà-ÿ]{1,2})\b/g, (m, a, b) => (a + b).length <= 12 ? a + b : m);
+    s = s.replace(/\b([A-Za-zÀ-ÿ]{2,})\s([A-Za-zà-ÿ]{1,2})\b/g, (m, a, b) => (a + b).length <= 12 ? a + b : m);
     return s.replace(/\s{2,}/g, " ").trim();
   }
 
