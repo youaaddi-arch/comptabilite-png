@@ -91,7 +91,7 @@
 
   /* --------------------- Délégation d'événements ------------------- */
   document.addEventListener("click", (ev) => {
-    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-saisirpaie],[data-verifbanque],[data-siren],[data-traitemail],[data-rappro],[data-unrappro],#btnScan,#btnSimEmail,#btnTraiterMails,#btnAutoRappro,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#closeModal,#modalBack,#btnReset");
+    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-saisirpaie],[data-verifbanque],[data-siren],[data-traitemail],[data-rappro],[data-rapprochoix],[data-unrappro],#btnScan,#btnSimEmail,#btnTraiterMails,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#closeModal,#modalBack,#btnReset");
     if (!t) return;
 
     if (t.id === "modalBack" && ev.target.id === "modalBack") return closeModal();
@@ -164,9 +164,16 @@
       render(); return;
     }
 
-    if (t.dataset.rappro) { S.rapprocher(t.dataset.rappro, t.dataset.ctype, t.dataset.cid); toast("Écriture rapprochée ✓", "#059669"); render(); return; }
+    if (t.dataset.rappro) { S.rapprocher(t.dataset.rappro, t.dataset.ctype, t.dataset.cid); closeModal(); toast("Écriture rapprochée ✓", "#059669"); render(); return; }
+    if (t.dataset.rapprochoix) {
+      const wrap = document.getElementById("modal");
+      wrap.innerHTML = V.rapproManuelModal(t.dataset.rapprochoix);
+      wrap.classList.remove("hidden");
+      return;
+    }
     if (t.dataset.unrappro) { S.annulerRapprochement(t.dataset.unrappro); toast("Rapprochement annulé", "#64748b"); render(); return; }
     if (t.id === "btnAutoRappro") { const n = S.rapprochementAuto(); toast(n ? `${n} écriture(s) rapprochée(s) automatiquement ✓` : "Aucun rapprochement automatique possible", n ? "#059669" : "#64748b"); render(); return; }
+    if (t.id === "btnSyncBanque") { const n = S.synchroniserBanque(); toast(`🔄 ${n} écriture(s) bancaire(s) remontée(s)`, "#0f172a"); render(); return; }
 
     if (t.id === "btnReset") { if (confirm("Réinitialiser toutes les données de démonstration ?")) { S.reset(); toast("Données réinitialisées", "#64748b"); render(); } return; }
   });

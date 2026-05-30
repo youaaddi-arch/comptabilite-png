@@ -426,6 +426,42 @@ PNG.store = (function () {
     if (!tx) return;
     tx.rapproche = false; tx.lienType = null; tx.lienId = null; save();
   }
+
+  /* Synchronisation bancaire quotidienne : de nouvelles écritures remontent.
+   * Crée en priorité les débits correspondant aux factures non encore
+   * rapprochées (pour que le rapprochement ait un sens), sinon des écritures
+   * variées. (Simulation d'un flux d'agrégation type Bridge/Powens.) */
+  function synchroniserBanque() {
+    ensureShape();
+    const nouvelles = [];
+    // factures payées (ou à payer) sans écriture bancaire correspondante
+    const sansTx = state.factures.filter((f) => !f.rapproche &&
+      !state.transactions.some((t) => t.sens === "debit" && t.societeId === f.societeId && Math.abs(Math.abs(t.montant) - f.montantTTC) < 0.01));
+    sansTx.slice(0, 3).forEach((f) => {
+      const mp = (f.modePaiement && (PNG.modesPaiement || []).find((m) => m.code === f.modePaiement));
+      const prefix = mp ? (mp.code === "prelevement" ? "PRLV" : mp.code === "cb" ? "CB" : mp.code === "cheque" ? "CHQ" : "VIR") : "PRLV";
+      nouvelles.push({
+        id: "TX-SYNC-" + Date.now() + "-" + nouvelles.length,
+        societeId: f.societeId, date: U.todayISO(),
+        libelle: `${prefix} ${f.fournisseur.toUpperCase()}`,
+        montant: -f.montantTTC, sens: "debit",
+        categorie: f.categorie || "Achat", rapproche: false, lienType: null, lienId: null,
+      });
+    });
+    if (!nouvelles.length) {
+      // rien à matcher : une écriture neutre pour montrer le flux quotidien
+      const c = PNG.companies.find((x) => SOLDES_INIT[x.id]);
+      nouvelles.push({
+        id: "TX-SYNC-" + Date.now(), societeId: c.id, date: U.todayISO(),
+        libelle: "CB FRAIS DIVERS", montant: -Math.round((20 + Math.random() * 180) * 100) / 100,
+        sens: "debit", categorie: "Divers", rapproche: false, lienType: null, lienId: null,
+      });
+    }
+    nouvelles.forEach((t) => state.transactions.unshift(t));
+    log("Synchronisation bancaire", `${nouvelles.length} écriture(s) remontée(s)`);
+    save();
+    return nouvelles.length;
+  }
   function rapprochementAuto() {
     let n = 0;
     state.transactions.filter((t) => !t.rapproche).forEach((tx) => {
@@ -516,7 +552,7 @@ PNG.store = (function () {
     recevoirEmail, traiterEmail, traiterTousEmails, detecterDoublon,
     saisirPaiement, marquerPaye, verifierPaiementBanque, verifierTousPaiements,
     enrichirSiren, fournisseurDossiers, rebuildFournisseurs,
-    suggestionsPour, rapprocher, annulerRapprochement, rapprochementAuto,
+    suggestionsPour, rapprocher, annulerRapprochement, rapprochementAuto, synchroniserBanque,
     tresorerie, tresorerieTotale, flux, facturesAValider, tauxRapprochement, tva,
     caParSociete, repartitionFinanceurs, serieFlux,
     aPayer, totalAPayer, emailsEnAttente, doublonsCount, paiementsAVerifier,

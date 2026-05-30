@@ -180,24 +180,35 @@ PNG.views = (function () {
   }
 
   /* ============================ FACTURES =========================== */
-  function factures(filter) {
-    const f = filter || "tous";
-    const list = S.get().factures.filter((x) => f === "tous" ? true : x.statut === f);
-    const counts = {
-      tous: S.get().factures.length,
-      ocr: S.get().factures.filter((x) => x.statut === "ocr").length,
-      a_valider: S.get().factures.filter((x) => x.statut === "a_valider").length,
-      brouillon: S.get().factures.filter((x) => x.statut === "brouillon").length,
-      comptabilise: S.get().factures.filter((x) => x.statut === "comptabilise").length,
-    };
-    const tab = (key, label) => `<button data-filter="${key}" class="px-3 py-1.5 rounded-lg text-sm font-medium ${f === key ? "bg-blue-600 text-white" : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"}">${label} <span class="opacity-70">${counts[key]}</span></button>`;
+  // Dossiers métier : "à saisir" (pré-saisies à compléter/valider) vs "validé"
+  const DOSSIER_A_SAISIR = ["ocr", "a_valider"];
+  const DOSSIER_VALIDE = ["brouillon", "comptabilise"];
+  const srcLabel = { email: "Email", upload: "Saisie directe", scan: "App mobile", online: "Récupéré en ligne" };
+  const srcIcon = { email: "✉️", upload: "⬆︎", scan: "📱", online: "🌐" };
 
-    const srcIcon = { email: "✉️", upload: "⬆︎", scan: "📷" };
+  function factures(filter) {
+    const f = filter || "a_saisir";
+    const all = S.get().factures;
+    // filtre principal : dossier (a_saisir / valide / tous) OU origine (src:email…)
+    let list;
+    if (f === "tous") list = all;
+    else if (f === "valide") list = all.filter((x) => DOSSIER_VALIDE.includes(x.statut));
+    else if (f.startsWith("src:")) { const s = f.slice(4); list = all.filter((x) => (x.source || "upload") === s); }
+    else list = all.filter((x) => DOSSIER_A_SAISIR.includes(x.statut)); // a_saisir par défaut
+
+    const cnt = {
+      a_saisir: all.filter((x) => DOSSIER_A_SAISIR.includes(x.statut)).length,
+      valide: all.filter((x) => DOSSIER_VALIDE.includes(x.statut)).length,
+      tous: all.length,
+    };
+    const srcCnt = (s) => all.filter((x) => (x.source || "upload") === s).length;
+    const tab = (key, label, n) => `<button data-filter="${key}" class="px-3 py-1.5 rounded-lg text-sm font-medium ${f === key ? "bg-blue-600 text-white" : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"}">${label} <span class="opacity-70">${n}</span></button>`;
+
     const rows = list.map((x) => {
       const st = U.STATUT_FACTURE[x.statut];
       const lowConf = x.societeConfiance < 0.75;
       return `<tr class="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" data-open="${x.id}">
-        <td class="py-3 pl-2"><div class="flex items-center gap-2"><span class="text-slate-400" title="${e(x.source||'upload')}">${srcIcon[x.source]||"📄"}</span><div><p class="text-sm font-medium text-slate-700">${e(x.fournisseur)} ${x.doublonDe ? `<span class="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full align-middle">DOUBLON</span>` : ""}</p><p class="text-xs text-slate-400">${e(x.fichier)}</p></div></div></td>
+        <td class="py-3 pl-2"><div class="flex items-center gap-2"><span class="text-slate-400" title="${e(srcLabel[x.source]||'Saisie directe')}">${srcIcon[x.source]||"📄"}</span><div><p class="text-sm font-medium text-slate-700">${e(x.fournisseur)} ${x.doublonDe ? `<span class="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full align-middle">DOUBLON</span>` : ""}</p><p class="text-xs text-slate-400">${e(srcLabel[x.source]||"Saisie directe")} · ${e(x.fichier)}</p></div></div></td>
         <td class="py-3">${societeChip(x.societeId)} ${lowConf ? `<span class="ml-1 text-xs text-red-500" title="Confiance faible">⚠︎</span>` : ""}</td>
         <td class="py-3 text-sm text-slate-600">${e(x.numeroFacture)}</td>
         <td class="py-3 text-sm text-slate-500">${U.fmtDate(x.dateFacture)}</td>
@@ -210,33 +221,54 @@ PNG.views = (function () {
     const enAttente = S.emailsEnAttente();
 
     return `
-      <div class="flex items-center justify-between mb-6">
+      <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div><h1 class="text-2xl font-bold text-slate-800">Factures fournisseurs</h1>
-        <p class="text-slate-500 text-sm">Collecte (email / upload) · OCR · reconnaissance société · pré-saisie · affectation au plan comptable</p></div>
+        <p class="text-slate-500 text-sm">Toutes les factures arrivent ici, d'où qu'elles viennent : email, app mobile, saisie directe, récupération en ligne.</p></div>
         <div class="flex gap-2">
-          <button id="btnSimEmail" class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-sm flex items-center gap-2">✉️ Simuler une facture reçue par email</button>
-          <button id="btnScan" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-sm flex items-center gap-2">⬆︎ Déposer une facture</button>
+          <button id="btnSimEmail" class="bg-violet-600 hover:bg-violet-700 text-white px-3 py-2.5 rounded-xl text-sm font-medium shadow-sm">✉️ Email</button>
+          <button id="btnDeposeMobile" class="bg-slate-800 hover:bg-slate-900 text-white px-3 py-2.5 rounded-xl text-sm font-medium shadow-sm">📱 App mobile</button>
+          <button id="btnScan" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2.5 rounded-xl text-sm font-medium shadow-sm">⬆︎ Saisie directe</button>
         </div>
       </div>
 
-      <!-- Bandeau collecte par email (cœur Pennylane / Yooz) -->
-      <div class="bg-gradient-to-r from-violet-50 to-blue-50 border border-violet-100 rounded-2xl p-4 mb-5 flex items-center justify-between flex-wrap gap-3">
-        <div class="text-sm">
-          <p class="font-semibold text-slate-700">📨 Collecte automatique par email</p>
-          <p class="text-slate-500">Transférez vos factures à <code class="bg-white px-1.5 py-0.5 rounded border border-violet-200 text-violet-700">factures+<i>société</i>@parisnordgroupe.fr</code> → la <strong>pré-saisie OCR</strong> se fait automatiquement à la réception. <span class="text-amber-600">(Adresses à activer sur votre messagerie.)</span></p>
-        </div>
-        ${enAttente ? `<button id="btnTraiterMails" class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap">⚙︎ Traiter ${enAttente} email(s) en attente</button>` : `<a href="#collecte" class="text-violet-700 text-sm font-medium whitespace-nowrap hover:underline">Voir la boîte de collecte →</a>`}
+      <!-- Les deux DOSSIERS principaux -->
+      <div class="grid grid-cols-2 gap-3 mb-4">
+        <button data-filter="a_saisir" class="text-left rounded-2xl p-4 border-2 transition ${(f==='a_saisir')?'border-amber-400 bg-amber-50':'border-slate-100 bg-white hover:border-amber-200'}">
+          <p class="text-xs text-slate-400 uppercase tracking-wide">Dossier 1</p>
+          <p class="font-bold text-slate-800">📥 À saisir <span class="text-amber-600">(${cnt.a_saisir})</span></p>
+          <p class="text-xs text-slate-500 mt-0.5">Pré-saisies par l'OCR (fournisseur, montant, TVA déjà remplis) — à vérifier puis valider.</p>
+        </button>
+        <button data-filter="valide" class="text-left rounded-2xl p-4 border-2 transition ${(f==='valide')?'border-emerald-400 bg-emerald-50':'border-slate-100 bg-white hover:border-emerald-200'}">
+          <p class="text-xs text-slate-400 uppercase tracking-wide">Dossier 2</p>
+          <p class="font-bold text-slate-800">✅ Validé <span class="text-emerald-600">(${cnt.valide})</span></p>
+          <p class="text-xs text-slate-500 mt-0.5">Factures saisies/comptabilisées, prêtes pour le rapprochement bancaire.</p>
+        </button>
       </div>
 
-      <div class="flex flex-wrap gap-2 mb-4">${tab("tous","Toutes")}${tab("ocr","OCR en cours")}${tab("a_valider","À valider")}${tab("brouillon","Brouillon")}${tab("comptabilise","Comptabilisé")}</div>
+      <!-- Bandeau collecte par email -->
+      <div class="bg-gradient-to-r from-violet-50 to-blue-50 border border-violet-100 rounded-2xl p-3 mb-4 flex items-center justify-between flex-wrap gap-3">
+        <p class="text-sm text-slate-500">📨 Transférez vos factures à <code class="bg-white px-1.5 py-0.5 rounded border border-violet-200 text-violet-700">factures+<i>société</i>@parisnordgroupe.fr</code> → pré-saisie OCR automatique. <span class="text-amber-600">(Adresses à activer.)</span></p>
+        ${enAttente ? `<button id="btnTraiterMails" class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap">⚙︎ Traiter ${enAttente} email(s)</button>` : `<a href="#collecte" class="text-violet-700 text-sm font-medium whitespace-nowrap hover:underline">Boîte de collecte →</a>`}
+      </div>
+
+      <!-- Filtre par origine -->
+      <div class="flex flex-wrap items-center gap-2 mb-4">
+        <span class="text-xs text-slate-400 mr-1">Origine :</span>
+        ${tab("tous","Toutes", cnt.tous)}
+        ${tab("src:email","✉️ Email", srcCnt("email"))}
+        ${tab("src:scan","📱 App mobile", srcCnt("scan"))}
+        ${tab("src:upload","⬆︎ Saisie directe", srcCnt("upload"))}
+        ${tab("src:online","🌐 En ligne", srcCnt("online"))}
+      </div>
+
       <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         <table class="w-full">
           <thead><tr class="text-xs text-slate-400 text-left bg-slate-50">
-            <th class="font-medium py-2.5 pl-2">Fournisseur / fichier</th><th class="font-medium py-2.5">Société reconnue</th>
+            <th class="font-medium py-2.5 pl-2">Fournisseur / origine</th><th class="font-medium py-2.5">Société reconnue</th>
             <th class="font-medium py-2.5">N° facture</th><th class="font-medium py-2.5">Date</th>
             <th class="font-medium py-2.5 text-right">TTC</th><th class="font-medium py-2.5 text-center">OCR</th><th class="font-medium py-2.5 text-center">Statut</th>
           </tr></thead>
-          <tbody>${rows || `<tr><td colspan="7" class="text-center py-8 text-slate-400">Aucune facture</td></tr>`}</tbody>
+          <tbody>${rows || `<tr><td colspan="7" class="text-center py-8 text-slate-400">Aucune facture dans ce dossier</td></tr>`}</tbody>
         </table>
       </div>`;
   }
@@ -406,16 +438,23 @@ PNG.views = (function () {
               ${sug.map((s) => `<button data-rappro="${t.id}" data-ctype="${s.type}" data-cid="${s.id}" class="w-full flex items-center justify-between bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg px-3 py-2 mb-1.5 text-sm">
                 <span class="text-emerald-800">${s.type === "facture" ? "📄" : "🎓"} ${e(s.label)}</span>
                 <span class="flex items-center gap-2"><span class="text-slate-500">${U.fmtEUR(s.montant)}</span>${confBadge(s.score)}<span class="text-emerald-700 font-medium">Rapprocher →</span></span></button>`).join("")}
+              <button data-rapprochoix="${t.id}" class="w-full text-xs text-slate-500 hover:text-blue-600 mt-1">⇄ Choisir une autre contrepartie…</button>
             </div>`
-          : `<div class="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-400">Aucune contrepartie automatique trouvée — à classer manuellement.</div>`}
+          : `<div class="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
+              <span class="text-xs text-slate-400">Aucune contrepartie automatique trouvée.</span>
+              <button data-rapprochoix="${t.id}" class="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-medium">⇄ Rapprocher manuellement</button>
+            </div>`}
       </div>`;
     };
 
     return `
-      <div class="flex items-center justify-between mb-6">
+      <div class="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div><h1 class="text-2xl font-bold text-slate-800">Banque & rapprochement</h1>
-        <p class="text-slate-500 text-sm">Écritures bancaires quotidiennes · encaissements / décaissements · lettrage automatique</p></div>
-        <button id="btnAutoRappro" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-sm">⇄ Rapprochement automatique</button>
+        <p class="text-slate-500 text-sm">Les écritures bancaires remontent automatiquement chaque jour. Rapprochez-les avec les factures (décaissements) et les dossiers (encaissements).</p></div>
+        <div class="flex gap-2">
+          <button id="btnSyncBanque" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-sm">🔄 Synchroniser la banque (jour)</button>
+          <button id="btnAutoRappro" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-sm">⇄ Rapprochement automatique</button>
+        </div>
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         ${kpiCard("Taux de rapprochement", U.fmtPct(taux), `${txs.filter(t=>t.rapproche).length}/${txs.length} écritures`, "#7c3aed", "⇄")}
@@ -694,5 +733,42 @@ PNG.views = (function () {
     </div>`;
   }
 
-  return { dashboard, dashboardCharts, factures, factureModal, collecte, banque, tvaView, financements, societes, plan, fonctionnalites, registre, fournisseurs, mobileModal };
+  /* Modale de rapprochement manuel : choisir la contrepartie d'une écriture */
+  function rapproManuelModal(txId) {
+    const t = S.get().transactions.find((x) => x.id === txId);
+    if (!t) return "";
+    const credit = t.montant >= 0;
+    // candidats : factures non rapprochées (débit) ou dossiers (crédit), même société d'abord
+    let cands;
+    if (credit) {
+      cands = S.get().dossiers.filter((d) => d.statut !== "encaisse").map((d) => ({ type: "dossier", id: d.id, label: `${d.stagiaire} · ${d.numeroDossier}`, montant: d.montant, soc: d.societeId }));
+    } else {
+      cands = S.get().factures.filter((f) => !f.rapproche).map((f) => ({ type: "facture", id: f.id, label: `${f.fournisseur} · ${f.numeroFacture}`, montant: f.montantTTC, soc: f.societeId }));
+    }
+    cands.sort((a, b) => (a.soc === t.societeId ? -1 : 1) - (b.soc === t.societeId ? -1 : 1) || Math.abs(a.montant - Math.abs(t.montant)) - Math.abs(b.montant - Math.abs(t.montant)));
+    const rows = cands.map((c) => {
+      const ecart = Math.abs(c.montant - Math.abs(t.montant));
+      const proche = ecart < 1;
+      return `<button data-rappro="${t.id}" data-ctype="${c.type}" data-cid="${c.id}" class="w-full flex items-center justify-between border ${proche?'border-emerald-200 bg-emerald-50':'border-slate-200'} hover:bg-slate-50 rounded-lg px-3 py-2 mb-1.5 text-sm text-left">
+        <span><span class="${c.soc===t.societeId?'':'opacity-50'}">${c.type==='facture'?'📄':'🎓'} ${e(c.label)}</span> ${c.soc!==t.societeId?`<span class="text-[10px] text-amber-600">(autre société)</span>`:""}</span>
+        <span class="flex items-center gap-2"><span class="text-slate-500">${U.fmtEUR(c.montant)}</span>${proche?badge("montant ✓","bg-emerald-100 text-emerald-700"):`<span class="text-xs text-slate-400">écart ${U.fmtEUR(ecart)}</span>`}</span>
+      </button>`;
+    }).join("");
+    return `
+    <div class="fixed inset-0 bg-slate-900/50 z-40 flex items-center justify-center p-4" id="modalBack">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[88vh] overflow-y-auto" onclick="event.stopPropagation()">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <div><h2 class="font-bold text-slate-800">Rapprocher manuellement</h2>
+          <p class="text-xs text-slate-400">${e(t.libelle)} · ${U.fmtDate(t.date)} · <span class="${credit?'text-emerald-600':'text-red-500'}">${credit?'+':''}${U.fmtEUR(t.montant)}</span></p></div>
+          <button id="closeModal" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+        </div>
+        <div class="p-5">
+          <p class="text-xs text-slate-500 mb-3">Choisissez la ${credit?'recette (dossier de financement)':'facture'} correspondant à cette écriture :</p>
+          ${rows || `<p class="text-slate-400 text-sm text-center py-6">Aucune contrepartie disponible.</p>`}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  return { dashboard, dashboardCharts, factures, factureModal, collecte, banque, tvaView, financements, societes, plan, fonctionnalites, registre, fournisseurs, mobileModal, rapproManuelModal };
 })();
