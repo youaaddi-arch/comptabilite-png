@@ -92,27 +92,49 @@ PNG.ocr = (function () {
     return out;
   }
 
+  // Corrige les espaces parasites de l'OCR : "GOOG LE" -> "GOOGLE",
+  // "M I C R O S O F T" -> "MICROSOFT" (garde les vrais espaces, ex "Paris Nord").
+  function reparerEspaces(s) {
+    if (!s) return s;
+    s = s.replace(/\b(?:[A-Za-zÀ-ÿ]\s){2,}[A-Za-zÀ-ÿ]\b/g, (m) => m.replace(/\s+/g, ""));
+    s = s.replace(/\b([A-Za-zÀ-ÿ]{2,})\s([a-zà-ÿ]{1,2})\b/g, (m, a, b) => (a + b).length <= 12 ? a + b : m);
+    return s.replace(/\s{2,}/g, " ").trim();
+  }
+
   function parseFacture(texte) {
-    const t = texte.replace(/ /g, " ");
+    const t = texte.replace(/\u00A0/g, " ");
     const upper = t.toUpperCase();
 
-    // Fournisseur : 1re ligne "significative" du document
+    // Fournisseur : 1re ligne "significative" du document (en-tête)
     let fournisseur = "";
     const lignes = t.split(/\n/).map((l) => l.trim()).filter((l) => l.length > 2);
     for (const l of lignes) {
-      if (/facture|invoice|devis|n[°o]\b|siret|tva|date/i.test(l)) continue;
-      if (/^[\d\s.,€-]+$/.test(l)) continue;
-      fournisseur = l.replace(/\s{2,}/g, " ").slice(0, 60); break;
+      if (/facture|invoice|devis|n[°o]\b|siret|siren|tva|date|client|adresse/i.test(l)) continue;
+      if (/^[\d\s.,€%-]+$/.test(l)) continue;
+      if (!/[A-Za-zÀ-ÿ]{2}/.test(l)) continue;
+      fournisseur = reparerEspaces(l).slice(0, 60); break;
     }
 
-    // N° de facture
-    const numM = t.match(/(?:facture|invoice|n[°o])\s*[:#]?\s*([A-Z0-9][A-Z0-9\-\/]{2,})/i);
-    const numeroFacture = numM ? numM[1] : "";
+    // N° de facture — plusieurs formulations possibles
+    let numeroFacture = "";
+    const numPatterns = [
+      /n[°o]\s*(?:de\s*)?facture\s*[:#]?\s*([A-Z0-9][A-Z0-9\-\/\._]{2,})/i,
+      /num[ée]ro\s*(?:de\s*)?facture\s*[:#]?\s*([A-Z0-9][A-Z0-9\-\/\._]{2,})/i,
+      /(?:facture|invoice)\s*(?:n[°o]|num[ée]ro|#|:)?\s*[:#]?\s*([A-Z0-9][A-Z0-9\-\/\._]{2,})/i,
+    ];
+    for (const re of numPatterns) {
+      const m = t.match(re);
+      if (m && m[1] && !/^(date|tva|ttc|ht|du|le)$/i.test(m[1])) { numeroFacture = m[1].replace(/[.\s]+$/, ""); break; }
+    }
 
-    // SIREN/SIRET présents sur la facture (14 ou 9 chiffres, espaces tolérés)
+    // SIREN/SIRET : priorité au SIRET (14) ; SIREN explicite ou dérivé du SIRET
     const compact = upper.replace(/[ .]/g, "");
-    const siretM = compact.match(/(\d{14})/);
-    const sirenM = compact.match(/(?:SIREN[:\s]*)(\d{9})/) || compact.match(/(\d{9})(?!\d)/);
+    const siretM = compact.match(/(?:SIRET[:\s]*)?(\d{14})/);
+    let sirenVal = "";
+    const sirenLabel = compact.match(/SIREN[:\s]*(\d{9})/);
+    if (sirenLabel) sirenVal = sirenLabel[1];
+    else if (siretM) sirenVal = siretM[1].slice(0, 9);
+    const sirenM = sirenVal ? [null, sirenVal] : null;
 
     // Montants (TVA en € : on exige des décimales pour éviter de capter le taux)
     let ttc = montantApresMot(t, "total\\s*ttc|net\\s*[àa]\\s*payer|montant\\s*ttc|total\\s*t\\.?t\\.?c");
