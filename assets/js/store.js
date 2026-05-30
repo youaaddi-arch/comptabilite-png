@@ -60,6 +60,7 @@ PNG.store = (function () {
       if (f.statutPaiement === undefined) f.statutPaiement = f.paye ? "paye_attente" : "a_payer";
       if (f.driveUrl === undefined) f.driveUrl = PNG.drive.path(f.societeId, f.fournisseur, f.fichier);
       if (f.dateImport === undefined) f.dateImport = f.dateDepot || null;
+      if (f.emailDestination === undefined) f.emailDestination = (f.source === "email") ? PNG.emailCapture(f.societeId) : null;
       if (f.dateReglement === undefined) f.dateReglement = f.datePaiement || null;
       if (f.dateDecaissement === undefined) f.dateDecaissement = (f.rapproche && f.statutPaiement === "paye_verifie") ? (f.datePaiement || null) : null;
       if (f.regleParSocieteId === undefined) f.regleParSocieteId = null;
@@ -204,8 +205,9 @@ PNG.store = (function () {
       id: "FAC-NEW-" + Date.now() + "-" + n,
       type: "achat",
       fichier: opts.fichier || `scan_${U.todayISO().replace(/-/g, "")}_${100000 + Math.floor(Math.random() * 899999)}.pdf`,
-      source: opts.source || "upload",      // upload | email | scan
-      sourceEmail: opts.sourceEmail || null,
+      source: opts.source || "upload",      // upload | email | scan | online
+      sourceEmail: opts.sourceEmail || null,        // adresse d'expédition (transmission)
+      emailDestination: opts.emailDestination || null, // boîte de collecte qui a reçu
       dateDepot: U.todayISO(), dateImport: U.todayISO(), statut: "a_valider",
       dateReglement: null, dateDecaissement: null, regleParSocieteId: null,
       fournisseur: m.fournisseur, categorie: f ? f.categorie : "Divers",
@@ -278,57 +280,34 @@ PNG.store = (function () {
     return fac;
   }
 
-  /* -------- Collecte par EMAIL (cœur Pennylane / Yooz) --------------
-   * 1) recevoirEmail() : un email avec PJ arrive dans la boîte de collecte
-   *    de la société (état "reçu", pas encore traité).
-   * 2) traiterEmail() : l'OCR s'exécute sur la PJ -> crée la facture
-   *    pré-saisie (comme la "presaise" automatique demandée).
+  /* -------- Collecte par EMAIL ---------------------------------------
+   * Une facture reçue par email remonte DIRECTEMENT dans la liste des
+   * factures à traiter (pré-saisie OCR automatique), sans étape manuelle.
+   * On conserve l'adresse mail d'expéditeur (transmission).
    * ----------------------------------------------------------------- */
   function recevoirEmail(companyId) {
     ensureShape();
-    // société ciblée par l'adresse (sinon aléatoire)
     const candidats = MODELES_FAC.filter((m) => !companyId || m.soc === companyId);
     const m = (candidats.length ? candidats : MODELES_FAC)[Math.floor(Math.random() * (candidats.length ? candidats.length : MODELES_FAC.length))];
     const cid = companyId || m.soc;
-    const mail = {
-      id: "MAIL-" + Date.now(),
-      recu: U.todayISO(),
-      de: `compta@${m.fournisseur.toLowerCase().replace(/[^a-z]/g, "")}.com`,
-      a: PNG.emailCapture(cid),
-      societeId: cid,
-      objet: `Votre facture ${m.fournisseur}`,
-      piece: `${m.fournisseur.replace(/[^A-Za-z]/g, "_")}_facture.pdf`,
-      modele: { fournisseur: m.fournisseur, ht: m.ht, soc: cid },
-      statut: "recu",    // recu | traite
-      factureId: null,
-    };
-    state.inbox.unshift(mail);
-    log("Email reçu (collecte)", `${mail.de} → ${mail.a}`);
-    save();
-    return mail;
-  }
-
-  function traiterEmail(mailId) {
-    ensureShape();
-    const mail = state.inbox.find((x) => x.id === mailId);
-    if (!mail || mail.statut === "traite") return null;
-    const fac = ocrToFacture(mail.modele, {
-      source: "email", sourceEmail: mail.de, fichier: mail.piece,
+    const de = `compta@${m.fournisseur.toLowerCase().replace(/[^a-z]/g, "")}.com`;
+    const fac = ocrToFacture({ fournisseur: m.fournisseur, ht: m.ht, soc: cid }, {
+      source: "email", sourceEmail: de, emailDestination: PNG.emailCapture(cid),
+      fichier: `${m.fournisseur.replace(/[^A-Za-z]/g, "_")}_facture.pdf`,
     });
     state.factures.unshift(fac);
-    mail.statut = "traite"; mail.factureId = fac.id;
-    log("Facture pré-saisie depuis email", `${fac.fournisseur} · ${U.fmtEUR(fac.montantTTC)}${fac.doublonDe ? " · DOUBLON détecté" : ""}`);
+    log("Facture reçue par email", `${de} → ${fac.fournisseur} · ${U.fmtEUR(fac.montantTTC)}${fac.doublonDe ? " · DOUBLON" : ""}`);
     postCreationFacture(fac);
     save();
     return fac;
   }
 
-  // Traite toute la boîte d'un coup
+  // Compat (ancienne boîte de collecte) — désormais sans objet
+  function traiterEmail() { return null; }
   function traiterTousEmails() {
     ensureShape();
-    let n = 0;
-    state.inbox.filter((m) => m.statut === "recu").forEach((m) => { if (traiterEmail(m.id)) n++; });
-    return n;
+    // plus de boîte d'attente : la collecte email crée directement les factures
+    return 0;
   }
 
   /* Saisie du paiement par le salarié : mode + date.

@@ -6,7 +6,6 @@
 
   const NAV = [
     { route: "dashboard", label: "Tableau de bord", icon: "▦" },
-    { route: "collecte", label: "Collecte email", icon: "✉️", badge: () => S.emailsEnAttente() },
     { route: "factures", label: "Factures (OCR)", icon: "📄", badge: () => S.facturesAValider() },
     { route: "registre", label: "Registre factures", icon: "≡" },
     { route: "fournisseurs", label: "Fournisseurs", icon: "🏷️" },
@@ -55,7 +54,7 @@
     const view = document.getElementById("view");
     let html = "";
     switch (current.route) {
-      case "collecte": html = V.collecte(); break;
+      case "collecte": location.hash = "#factures"; return; // collecte fusionnée dans factures
       case "factures": html = V.factures(current.filter); break;
       case "registre": html = V.registre(); break;
       case "fournisseurs": html = V.fournisseurs(); break;
@@ -102,7 +101,7 @@
 
   /* --------------------- Délégation d'événements ------------------- */
   document.addEventListener("click", (ev) => {
-    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-saisirpaie],[data-verifbanque],[data-siren],[data-traitemail],[data-rappro],[data-rapprochoix],[data-unrappro],#btnScan,#btnSimEmail,#btnTraiterMails,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#closeModal,#modalBack,#btnReset");
+    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-saisirpaie],[data-verifbanque],[data-siren],[data-rappro],[data-rapprochoix],[data-unrappro],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#closeModal,#modalBack,#btnReset");
     if (!t) return;
 
     if (t.id === "modalBack" && ev.target.id === "modalBack") return closeModal();
@@ -161,20 +160,11 @@
       render(); setTimeout(() => openModal(f.id), 150); return;
     }
     if (t.id === "btnSimEmail") {
-      const m = S.recevoirEmail();
-      toast(`✉️ Email reçu de ${m.de} — facture en attente d'OCR`, "#7c3aed");
-      if (location.hash.slice(1).split("/")[0] !== "collecte") location.hash = "#collecte"; else render();
-      return;
-    }
-    if (t.dataset.traitemail) {
-      const f = S.traiterEmail(t.dataset.traitemail);
-      if (f) { const c = PNG.utils.companyById(f.societeId); toast(`Pré-saisie OCR : ${f.fournisseur} → ${c ? c.raisonSociale : "?"}${f.doublonDe ? " ⚠︎ doublon" : ""}`, "#059669"); render(); setTimeout(() => openModal(f.id), 150); }
-      return;
-    }
-    if (t.id === "btnTraiterMails") {
-      const n = S.traiterTousEmails();
-      toast(n ? `${n} facture(s) pré-saisie(s) depuis les emails ✓` : "Aucun email à traiter", n ? "#059669" : "#64748b");
-      render(); return;
+      const scope = S.getScope();
+      const f = S.recevoirEmail(scope || undefined);
+      const c = PNG.utils.companyById(f.societeId);
+      toast(`✉️ Facture reçue par email de ${f.sourceEmail} → ${c ? c.raisonSociale : "?"}`, "#7c3aed");
+      render(); setTimeout(() => openModal(f.id), 150); return;
     }
 
     if (t.dataset.rappro) { S.rapprocher(t.dataset.rappro, t.dataset.ctype, t.dataset.cid); closeModal(); toast("Écriture rapprochée ✓", "#059669"); render(); return; }

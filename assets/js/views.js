@@ -116,14 +116,14 @@ PNG.views = (function () {
       </div>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-        ${kpiCard("Factures à traiter", aValider, `${S.emailsEnAttente()} email(s) · ${S.doublonsCount()} doublon(s)`, "#ea580c", "▦")}
+        ${kpiCard("Factures à traiter", aValider, `${S.doublonsCount()} doublon(s) détecté(s)`, "#ea580c", "▦")}
         ${kpiCard("À payer (fournisseurs)", U.fmtEUR(S.totalAPayer()), `${S.aPayer().length} facture(s) non réglée(s)`, "#dc2626", "€")}
         ${kpiCard("TVA collectée", U.fmtEUR(tva.collectee), "Mois en cours", "#16a34a", "T")}
         ${kpiCard("TVA déductible", U.fmtEUR(tva.deductible), `À ${tva.aDecaisser>=0?'décaisser':'récupérer'} : ${U.fmtEUR(Math.abs(tva.aDecaisser))}`, "#db2777", "T")}
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
         ${kpiCard("Chiffre d'affaires", U.fmtEUR(caTotal), "Dossiers facturés", "#0ea5e9", "▲")}
-        ${kpiCard("Collecte email", S.emailsEnAttente(), "facture(s) en attente d'OCR", "#7c3aed", "✉")}
+        ${kpiCard("Reçues par email", S.get().factures.filter(S.inScope).filter(x=>x.source==="email").length, "factures collectées par email", "#7c3aed", "✉")}
         ${kpiCard("Sociétés actives", PNG.companies.filter(c=>S.SOLDES_INIT[c.id]).length, `sur ${PNG.companies.length} entités`, "#0891b2", "🏢")}
         ${kpiCard("Factures comptabilisées", S.get().factures.filter(x=>x.statut==="comptabilise").length, "ce mois", "#16a34a", "✓")}
       </div>
@@ -224,8 +224,10 @@ PNG.views = (function () {
       const st = U.STATUT_FACTURE[x.statut];
       const lowConf = x.societeConfiance < 0.75;
       return `<tr class="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" data-open="${x.id}">
-        <td class="py-3 pl-2"><div class="flex items-center gap-2"><span class="text-slate-400" title="${e(srcLabel[x.source]||'Saisie directe')}">${srcIcon[x.source]||"📄"}</span><div><p class="text-sm font-medium text-slate-700">${e(x.fournisseur)} ${x.doublonDe ? `<span class="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full align-middle">DOUBLON</span>` : ""}</p><p class="text-xs text-slate-400">${e(srcLabel[x.source]||"Saisie directe")} · ${e(x.fichier)}</p></div></div></td>
+        <td class="py-3 pl-2"><div class="flex items-center gap-2"><span class="text-slate-400">${srcIcon[x.source]||"📄"}</span><div><p class="text-sm font-medium text-slate-700">${e(x.fournisseur)} ${x.doublonDe ? `<span class="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full align-middle">DOUBLON</span>` : ""}</p><p class="text-xs text-slate-400">${e(x.fichier)}</p></div></div></td>
         <td class="py-3">${societeChip(x.societeId)} ${lowConf ? `<span class="ml-1 text-xs text-red-500" title="Confiance faible">⚠︎</span>` : ""}</td>
+        <td class="py-3 text-xs"><span class="inline-flex items-center gap-1 bg-slate-100 text-slate-600 rounded-full px-2 py-0.5">${srcIcon[x.source]||"📄"} ${e(srcLabel[x.source]||"Saisie directe")}</span></td>
+        <td class="py-3 text-xs text-slate-500">${x.sourceEmail ? e(x.sourceEmail) : `<span class="text-slate-300">—</span>`}</td>
         <td class="py-3 text-sm text-slate-600">${e(x.numeroFacture)}</td>
         <td class="py-3 text-sm text-slate-500">${U.fmtDate(x.dateFacture)}</td>
         <td class="py-3 text-right text-sm font-medium text-slate-700">${U.fmtEUR(x.montantTTC)}</td>
@@ -234,17 +236,15 @@ PNG.views = (function () {
       </tr>`;
     }).join("");
 
-    const enAttente = S.emailsEnAttente();
-
     return `
       ${scopeBanner()}
       <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div><h1 class="text-2xl font-bold text-slate-800">Factures fournisseurs</h1>
-        <p class="text-slate-500 text-sm">Toutes les factures arrivent ici, d'où qu'elles viennent : email, app mobile, saisie directe, récupération en ligne.</p></div>
+        <p class="text-slate-500 text-sm">Toutes les factures remontent ici automatiquement : email, app mobile, saisie directe, récupération en ligne.</p></div>
         <div class="flex gap-2">
-          <button id="btnSimEmail" class="bg-violet-600 hover:bg-violet-700 text-white px-3 py-2.5 rounded-xl text-sm font-medium shadow-sm">✉️ Email</button>
+          <button id="btnSimEmail" class="bg-violet-600 hover:bg-violet-700 text-white px-3 py-2.5 rounded-xl text-sm font-medium shadow-sm" title="Simuler une facture reçue par email">✉️ Email</button>
           <button id="btnDeposeMobile" class="bg-slate-800 hover:bg-slate-900 text-white px-3 py-2.5 rounded-xl text-sm font-medium shadow-sm">📱 App mobile</button>
-          <button id="btnScan" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2.5 rounded-xl text-sm font-medium shadow-sm">⬆︎ Saisie directe</button>
+          <button id="btnScan" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2.5 rounded-xl text-sm font-medium shadow-sm" title="Charger un PDF / une image depuis l'ordinateur">⬆︎ Charger une facture (PDF/photo)</button>
         </div>
       </div>
 
@@ -253,7 +253,7 @@ PNG.views = (function () {
         <button data-filter="a_saisir" class="text-left rounded-2xl p-4 border-2 transition ${(f==='a_saisir')?'border-amber-400 bg-amber-50':'border-slate-100 bg-white hover:border-amber-200'}">
           <p class="text-xs text-slate-400 uppercase tracking-wide">Dossier 1</p>
           <p class="font-bold text-slate-800">📥 À saisir <span class="text-amber-600">(${cnt.a_saisir})</span></p>
-          <p class="text-xs text-slate-500 mt-0.5">Pré-saisies par l'OCR (fournisseur, montant, TVA déjà remplis) — à vérifier puis valider.</p>
+          <p class="text-xs text-slate-500 mt-0.5">Pré-saisies automatiquement par l'OCR (fournisseur, montant, TVA déjà remplis) — à vérifier puis valider.</p>
         </button>
         <button data-filter="valide" class="text-left rounded-2xl p-4 border-2 transition ${(f==='valide')?'border-emerald-400 bg-emerald-50':'border-slate-100 bg-white hover:border-emerald-200'}">
           <p class="text-xs text-slate-400 uppercase tracking-wide">Dossier 2</p>
@@ -262,30 +262,25 @@ PNG.views = (function () {
         </button>
       </div>
 
-      <!-- Bandeau collecte par email -->
-      <div class="bg-gradient-to-r from-violet-50 to-blue-50 border border-violet-100 rounded-2xl p-3 mb-4 flex items-center justify-between flex-wrap gap-3">
-        <p class="text-sm text-slate-500">📨 Transférez vos factures à <code class="bg-white px-1.5 py-0.5 rounded border border-violet-200 text-violet-700">factures+<i>société</i>@parisnordgroupe.fr</code> → pré-saisie OCR automatique. <span class="text-amber-600">(Adresses à activer.)</span></p>
-        ${enAttente ? `<button id="btnTraiterMails" class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap">⚙︎ Traiter ${enAttente} email(s)</button>` : `<a href="#collecte" class="text-violet-700 text-sm font-medium whitespace-nowrap hover:underline">Boîte de collecte →</a>`}
-      </div>
-
-      <!-- Filtre par origine -->
+      <!-- Filtre par mode de transmission -->
       <div class="flex flex-wrap items-center gap-2 mb-4">
-        <span class="text-xs text-slate-400 mr-1">Origine :</span>
-        ${tab("tous","Toutes", cnt.tous)}
+        <span class="text-xs text-slate-400 mr-1">Mode de transmission :</span>
+        ${tab("tous","Tous", cnt.tous)}
         ${tab("src:email","✉️ Email", srcCnt("email"))}
         ${tab("src:scan","📱 App mobile", srcCnt("scan"))}
         ${tab("src:upload","⬆︎ Saisie directe", srcCnt("upload"))}
         ${tab("src:online","🌐 En ligne", srcCnt("online"))}
       </div>
 
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-        <table class="w-full">
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-x-auto">
+        <table class="w-full min-w-[860px]">
           <thead><tr class="text-xs text-slate-400 text-left bg-slate-50">
-            <th class="font-medium py-2.5 pl-2">Fournisseur / origine</th><th class="font-medium py-2.5">Société reconnue</th>
+            <th class="font-medium py-2.5 pl-2">Fournisseur / fichier</th><th class="font-medium py-2.5">Société reconnue</th>
+            <th class="font-medium py-2.5">Transmission</th><th class="font-medium py-2.5">Adresse mail</th>
             <th class="font-medium py-2.5">N° facture</th><th class="font-medium py-2.5">Date</th>
             <th class="font-medium py-2.5 text-right">TTC</th><th class="font-medium py-2.5 text-center">OCR</th><th class="font-medium py-2.5 text-center">Statut</th>
           </tr></thead>
-          <tbody>${rows || `<tr><td colspan="7" class="text-center py-8 text-slate-400">Aucune facture dans ce dossier</td></tr>`}</tbody>
+          <tbody>${rows || `<tr><td colspan="9" class="text-center py-8 text-slate-400">Aucune facture dans ce dossier</td></tr>`}</tbody>
         </table>
       </div>`;
   }
@@ -656,8 +651,8 @@ PNG.views = (function () {
       const cpt = (U.planByNum(x.compteCharge) || {});
       const reglePar = x.regleParSocieteId ? (U.companyById(x.regleParSocieteId) || {}) : null;
       return `<tr class="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" data-open="${x.id}">
-        <td class="py-2.5 pl-3"><div class="flex items-center gap-1.5"><span>${{email:"✉️",upload:"⬆︎",scan:"📱",online:"🌐"}[x.source]||"📄"}</span><span class="text-sm font-medium text-slate-700">${e(x.fournisseur)}</span>${x.doublonDe?`<span class="text-[9px] bg-red-100 text-red-700 px-1 rounded">DBL</span>`:""}</div>
-          <span class="text-[10px] text-slate-400 ml-5">${societeChip(x.societeId)}</span></td>
+        <td class="py-2.5 pl-3"><div class="flex items-center gap-1.5"><span>${srcIcon[x.source]||"📄"}</span><span class="text-sm font-medium text-slate-700">${e(x.fournisseur)}</span>${x.doublonDe?`<span class="text-[9px] bg-red-100 text-red-700 px-1 rounded">DBL</span>`:""}</div>
+          <span class="text-[10px] text-slate-400 ml-5">${societeChip(x.societeId)}${x.sourceEmail?` · ${e(x.sourceEmail)}`:""}</span></td>
         <td class="py-2.5 text-xs text-slate-500">${e(x.numeroFacture)}</td>
         <td class="py-2.5 text-xs">${d(x.dateFacture)}</td>
         <td class="py-2.5 text-xs">${d(x.dateImport)}</td>
