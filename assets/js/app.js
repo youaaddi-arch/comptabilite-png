@@ -8,6 +8,7 @@
     { route: "dashboard", label: "Tableau de bord", icon: "▦" },
     { route: "factures", label: "Factures (OCR)", icon: "📄", badge: () => S.facturesAValider() },
     { route: "registre", label: "Registre factures", icon: "≡" },
+    { route: "regler", label: "Factures à régler", icon: "€", badge: () => S.aRegler().length },
     { route: "fournisseurs", label: "Fournisseurs", icon: "🏷️" },
     { route: "banque", label: "Banque & rapprochement", icon: "⇄", badge: () => S.get().transactions.filter(t=>!t.rapproche).length },
     { route: "tva", label: "TVA", icon: "T" },
@@ -57,6 +58,7 @@
       case "collecte": location.hash = "#factures"; return; // collecte fusionnée dans factures
       case "factures": html = V.factures(current.filter); break;
       case "registre": html = V.registre(); break;
+      case "regler": html = V.aReglerView(); break;
       case "fournisseurs": html = V.fournisseurs(); break;
       case "banque": html = V.banque(); break;
       case "tva": html = V.tvaView(); break;
@@ -101,7 +103,7 @@
 
   /* --------------------- Délégation d'événements ------------------- */
   document.addEventListener("click", (ev) => {
-    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-saisirpaie],[data-verifbanque],[data-siren],[data-rappro],[data-rapprochoix],[data-unrappro],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#closeModal,#modalBack,#btnReset");
+    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-savefac],[data-saisirpaie],[data-verifbanque],[data-siren],[data-rappro],[data-rapprochoix],[data-unrappro],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#closeModal,#modalBack,#btnReset");
     if (!t) return;
 
     if (t.id === "modalBack" && ev.target.id === "modalBack") return closeModal();
@@ -114,6 +116,17 @@
     if (t.dataset.valider) { S.validerBrouillon(t.dataset.valider); toast("Facture validée en brouillon ✓", "#2563eb"); closeModal(); render(); return; }
     if (t.dataset.compta) { S.comptabiliser(t.dataset.compta); toast("Écriture comptabilisée ✓", "#059669"); closeModal(); render(); return; }
     if (t.dataset.paye) { S.marquerPaye(t.dataset.paye, t.dataset.val === "1"); toast(t.dataset.val === "1" ? "Facture marquée payée ✓" : "Paiement annulé", "#059669"); openModal(t.dataset.paye); render(); return; }
+    if (t.dataset.savefac) {
+      const id = t.dataset.savefac;
+      const v = (i) => { const el = document.getElementById(i); return el ? el.value : null; };
+      S.editFacture(id, {
+        fournisseur: v("edFournisseur"), societeId: v("edSoc"), numeroFacture: v("edNum"),
+        categorie: v("edCat"), dateFacture: v("edDate"), echeance: v("edEch"),
+        montantHT: v("edHT"), tauxTva: v("edTaux"), montantTVA: v("edTVA"), montantTTC: v("edTTC"),
+      });
+      toast("Modifications enregistrées ✓", "#0f172a");
+      openModal(id); render(); return;
+    }
     if (t.dataset.saisirpaie) {
       const id = t.dataset.saisirpaie;
       const mode = (document.getElementById("selMode") || {}).value || "";
@@ -184,13 +197,24 @@
   // Changements de sélection dans la modale (société / compte)
   document.addEventListener("change", (ev) => {
     const el = ev.target;
-    if (el.id === "selSoc") { S.setFactureSociete(el.dataset.id, el.value); toast("Société réaffectée"); openModal(el.dataset.id); }
-    if (el.id === "selCpt") { S.setFactureCompte(el.dataset.id, el.value); toast("Compte modifié"); openModal(el.dataset.id); }
+    if (el.id === "selCpt") { S.setFactureCompte(el.dataset.id, el.value); toast("Compte modifié"); }
     if (el.name === "mobPaie") {
       const d = document.getElementById("mobPaieDetails");
       if (d) d.classList.toggle("hidden", el.value !== "paye");
     }
     if (el.id === "globalSoc") { S.setScope(el.value); render(); }
+  });
+
+  // Recalcul live des montants dans la fiche facture (sans recharger la modale)
+  document.addEventListener("input", (ev) => {
+    const el = ev.target;
+    if (el.id !== "edHT" && el.id !== "edTaux") return;
+    const ht = parseFloat((document.getElementById("edHT")||{}).value);
+    const taux = parseFloat((document.getElementById("edTaux")||{}).value);
+    if (isNaN(ht) || isNaN(taux)) return;
+    const tva = Math.round((ht * taux / 100) * 100) / 100;
+    const tvaEl = document.getElementById("edTVA"); if (tvaEl) tvaEl.value = tva;
+    const ttcEl = document.getElementById("edTTC"); if (ttcEl) ttcEl.value = Math.round((ht + tva) * 100) / 100;
   });
 
   window.addEventListener("hashchange", render);

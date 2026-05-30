@@ -144,12 +144,50 @@ PNG.store = (function () {
   /* ----------------------------- Actions facture ------------------- */
   function setFactureSociete(id, societeId) {
     const f = state.factures.find((x) => x.id === id);
-    if (f) { f.societeId = societeId; f.societeConfiance = 1; save(); }
+    if (f) { f.societeId = societeId; f.societeConfiance = 1; f.driveUrl = PNG.drive.path(societeId, f.fournisseur, f.fichier); save(); }
   }
   function setFactureCompte(id, compte) {
     const f = state.factures.find((x) => x.id === id);
     if (f) { f.compteCharge = compte; save(); }
   }
+
+  /* Édition libre par le comptable AVANT validation : tous les champs.
+   * Recalcule TVA/TTC à partir de HT + taux (sauf si TTC fourni explicitement). */
+  function editFacture(id, champs) {
+    const f = state.factures.find((x) => x.id === id);
+    if (!f) return;
+    const num = (v) => { const n = parseFloat(String(v).replace(",", ".")); return isNaN(n) ? null : Math.round(n * 100) / 100; };
+    if (champs.fournisseur != null) { f.fournisseur = champs.fournisseur; f.driveUrl = PNG.drive.path(f.societeId, f.fournisseur, f.fichier); }
+    if (champs.societeId != null) { f.societeId = champs.societeId; f.societeConfiance = 1; f.driveUrl = PNG.drive.path(f.societeId, f.fournisseur, f.fichier); }
+    if (champs.numeroFacture != null) f.numeroFacture = champs.numeroFacture;
+    if (champs.dateFacture != null) f.dateFacture = champs.dateFacture;
+    if (champs.echeance != null) f.echeance = champs.echeance;
+    if (champs.compteCharge != null) f.compteCharge = champs.compteCharge;
+    if (champs.categorie != null) f.categorie = champs.categorie;
+    // montants
+    let recalc = false;
+    if (champs.montantHT != null) { const v = num(champs.montantHT); if (v != null) { f.montantHT = v; recalc = true; } }
+    if (champs.tauxTva != null) { const v = num(champs.tauxTva); if (v != null) { f.tauxTva = v; recalc = true; } }
+    if (champs.montantTTC != null) {
+      // si le comptable saisit directement le TTC, on ajuste TVA = TTC - HT
+      const ttc = num(champs.montantTTC);
+      if (ttc != null) { f.montantTTC = ttc; f.montantTVA = Math.round((ttc - f.montantHT) * 100) / 100; recalc = false; }
+    } else if (champs.montantTVA != null) {
+      const tva = num(champs.montantTVA);
+      if (tva != null) { f.montantTVA = tva; f.montantTTC = Math.round((f.montantHT + tva) * 100) / 100; recalc = false; }
+    }
+    if (recalc) {
+      f.montantTVA = Math.round((f.montantHT * f.tauxTva / 100) * 100) / 100;
+      f.montantTTC = Math.round((f.montantHT + f.montantTVA) * 100) / 100;
+    }
+    // re-détecte un doublon après modif
+    f.doublonDe = (detecterDoublon(f) || {}).id || null;
+    f.modifie = true;
+    log("Facture modifiée (comptable)", `${f.fournisseur} · ${U.fmtEUR(f.montantTTC)}`);
+    upsertFournisseur(f);
+    save();
+  }
+
   function validerBrouillon(id) {
     const f = state.factures.find((x) => x.id === id);
     if (f && (f.statut === "a_valider" || f.statut === "ocr")) { f.statut = "brouillon"; save(); }
@@ -530,7 +568,16 @@ PNG.store = (function () {
     return map;
   }
 
-  // Échéancier fournisseur : factures non payées (à régler)
+  // « À régler » : factures VALIDÉES dont le statut paiement est "à payer"
+  // (le salarié ne les a pas marquées payées sur l'app).
+  function aRegler(societeId) {
+    return state.factures.filter((f) => f.type === "achat" && f.statutPaiement === "a_payer"
+      && (f.statut === "brouillon" || f.statut === "comptabilise")
+      && (!societeId || f.societeId === societeId));
+  }
+  const totalARegler = (societeId) => Math.round(aRegler(societeId).reduce((s, f) => s + f.montantTTC, 0) * 100) / 100;
+
+  // Échéancier fournisseur : factures non payées (à régler) — toutes statuts
   function aPayer(societeId) {
     return state.factures.filter((f) => f.type === "achat" && !f.paye && (!societeId || f.societeId === societeId)
       && (f.statut === "brouillon" || f.statut === "comptabilise" || f.statut === "a_valider"));
@@ -566,6 +613,7 @@ PNG.store = (function () {
     suggestionsPour, rapprocher, annulerRapprochement, rapprochementAuto, synchroniserBanque,
     tresorerie, tresorerieTotale, flux, facturesAValider, tauxRapprochement, tva,
     caParSociete, repartitionFinanceurs, serieFlux,
+    editFacture, aRegler, totalARegler,
     aPayer, totalAPayer, emailsEnAttente, doublonsCount, paiementsAVerifier,
   };
 })();

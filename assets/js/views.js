@@ -337,6 +337,7 @@ PNG.views = (function () {
     const optionsSoc = PNG.companies.map((co) => `<option value="${co.id}" ${co.id === x.societeId ? "selected" : ""}>${e(co.raisonSociale)}</option>`).join("");
     const optionsCpt = PNG.planComptable.filter((p) => p.type === "Charge").map((p) => `<option value="${p.num}" ${p.num === x.compteCharge ? "selected" : ""}>${p.num} — ${e(p.libelle)}</option>`).join("");
     const st = U.STATUT_FACTURE[x.statut];
+    const editable = x.statut !== "comptabilise"; // tout modifiable tant que pas comptabilisé
     const champ = (lbl, val, conf) => `<div class="flex items-center justify-between py-1.5 border-b border-slate-100"><span class="text-xs text-slate-400">${lbl}</span><span class="text-sm font-medium text-slate-700">${val} ${conf != null ? confBadge(conf) : ""}</span></div>`;
 
     return `
@@ -369,15 +370,35 @@ PNG.views = (function () {
           </div>
           <!-- Champs extraits + écriture -->
           <div class="p-6">
-            <div class="mb-4">${badge(st.label, st.cls)}</div>
-            <h3 class="text-xs font-semibold text-slate-400 uppercase mb-2">Données extraites (OCR)</h3>
+            <div class="mb-4 flex items-center justify-between">${badge(st.label, st.cls)}${editable ? `<span class="text-xs text-blue-600">✎ Tous les champs sont modifiables</span>` : `<span class="text-xs text-slate-400">Comptabilisée — non modifiable</span>`}</div>
+            <h3 class="text-xs font-semibold text-slate-400 uppercase mb-2">Données extraites (OCR) ${editable ? "— modifiables" : ""}</h3>
+            ${editable ? `
+            <div class="space-y-2 mb-2">
+              <div><label class="block text-[11px] text-slate-400">Fournisseur</label><input id="edFournisseur" data-id="${x.id}" value="${e(x.fournisseur)}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>
+              <div><label class="block text-[11px] text-slate-400">Société</label><select id="edSoc" data-id="${x.id}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm">${optionsSoc}</select></div>
+              <div class="grid grid-cols-2 gap-2">
+                <div><label class="block text-[11px] text-slate-400">N° facture</label><input id="edNum" data-id="${x.id}" value="${e(x.numeroFacture)}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>
+                <div><label class="block text-[11px] text-slate-400">Catégorie</label><input id="edCat" data-id="${x.id}" value="${e(x.categorie)}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div><label class="block text-[11px] text-slate-400">Date facture</label><input id="edDate" data-id="${x.id}" type="date" value="${e(x.dateFacture)}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>
+                <div><label class="block text-[11px] text-slate-400">Échéance</label><input id="edEch" data-id="${x.id}" type="date" value="${e(x.echeance)}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>
+              </div>
+              <div class="grid grid-cols-3 gap-2">
+                <div><label class="block text-[11px] text-slate-400">Montant HT</label><input id="edHT" data-id="${x.id}" inputmode="decimal" value="${x.montantHT}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>
+                <div><label class="block text-[11px] text-slate-400">Taux TVA %</label><input id="edTaux" data-id="${x.id}" inputmode="decimal" value="${x.tauxTva}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>
+                <div><label class="block text-[11px] text-slate-400">TVA €</label><input id="edTVA" data-id="${x.id}" inputmode="decimal" value="${x.montantTVA}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>
+              </div>
+              <div><label class="block text-[11px] text-slate-400">Montant TTC</label><input id="edTTC" data-id="${x.id}" inputmode="decimal" value="${x.montantTTC}" class="w-full border border-amber-200 bg-amber-50 rounded-lg px-3 py-2 text-sm font-semibold" /></div>
+              <button data-savefac="${x.id}" class="w-full bg-slate-700 hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-sm font-medium">💾 Enregistrer les modifications</button>
+              <p class="text-[10px] text-slate-400">Astuce : si vous changez HT ou le taux, la TVA et le TTC se recalculent. Vous pouvez aussi forcer le TTC directement.</p>
+            </div>` : `
             ${champ("Fournisseur", e(x.fournisseur), x.ocrConfiance)}
-            ${champ("N° facture", e(x.numeroFacture), x.ocrConfiance)}
-            ${champ("Date", U.fmtDate(x.dateFacture), x.ocrConfiance)}
-            ${champ("Échéance", U.fmtDate(x.echeance), null)}
+            ${champ("N° facture", e(x.numeroFacture), null)}
+            ${champ("Date", U.fmtDate(x.dateFacture), null)}
             ${champ("Montant HT", U.fmtEUR(x.montantHT), null)}
             ${champ("TVA " + x.tauxTva + "%", U.fmtEUR(x.montantTVA), null)}
-            ${champ("Montant TTC", U.fmtEUR(x.montantTTC), x.ocrConfiance)}
+            ${champ("Montant TTC", U.fmtEUR(x.montantTTC), null)}`}
 
             <h3 class="text-xs font-semibold text-slate-400 uppercase mb-2 mt-5">Identification fournisseur (data.gouv)</h3>
             <div class="bg-slate-50 rounded-lg p-3 text-sm mb-2">
@@ -391,11 +412,8 @@ PNG.views = (function () {
             </div>
             <a href="${e(x.driveUrl||"#")}" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:underline mb-2">📁 Voir dans le Drive <span class="text-slate-300">(archivage auto)</span></a>
 
-            <h3 class="text-xs font-semibold text-slate-400 uppercase mb-2 mt-3">Affectation</h3>
-            <label class="block text-xs text-slate-500 mb-1">Société ${x.societeConfiance < 0.75 ? `<span class="text-red-500">— à confirmer (${Math.round(x.societeConfiance*100)}%)</span>` : ""}</label>
-            <select id="selSoc" data-id="${x.id}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-3">${optionsSoc}</select>
-            <label class="block text-xs text-slate-500 mb-1">Compte de charge</label>
-            <select id="selCpt" data-id="${x.id}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4">${optionsCpt}</select>
+            <h3 class="text-xs font-semibold text-slate-400 uppercase mb-2 mt-3">Compte comptable</h3>
+            <select id="selCpt" data-id="${x.id}" ${editable ? "" : "disabled"} class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4">${optionsCpt}</select>
 
             <h3 class="text-xs font-semibold text-slate-400 uppercase mb-2">Écriture comptable (brouillon)</h3>
             <table class="w-full text-sm mb-4">
@@ -698,6 +716,43 @@ PNG.views = (function () {
       <p class="text-xs text-slate-400 mt-2">↔ = réglé par une autre société du groupe. La date de décaissement vient du rapprochement bancaire (peut différer de la date de règlement saisie).</p>`;
   }
 
+  /* ===================== FACTURES À RÉGLER ======================== */
+  function aReglerView() {
+    const list = S.aRegler().filter(S.inScope).slice().sort((a, b) => (a.echeance || "").localeCompare(b.echeance || ""));
+    const total = list.reduce((s, x) => s + x.montantTTC, 0);
+    const today = U.todayISO();
+    const rows = list.map((x) => {
+      const retard = x.echeance && x.echeance < today;
+      const mp = U.modePaiementByCode(x.modePaiement);
+      return `<tr class="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" data-open="${x.id}">
+        <td class="py-3 pl-3"><p class="text-sm font-medium text-slate-700">${e(x.fournisseur)}</p><p class="text-xs text-slate-400">${e(x.numeroFacture)}</p></td>
+        <td class="py-3">${societeChip(x.societeId)}</td>
+        <td class="py-3 text-sm ${retard?'text-red-600 font-semibold':'text-slate-500'}">${U.fmtDate(x.echeance)} ${retard?'<span class="text-[10px] bg-red-100 text-red-700 px-1.5 rounded-full">en retard</span>':''}</td>
+        <td class="py-3 text-right text-sm font-medium">${U.fmtEUR(x.montantTTC)}</td>
+        <td class="py-3 text-center">${badge(U.STATUT_PAIEMENT.a_payer.label, U.STATUT_PAIEMENT.a_payer.cls)}</td>
+        <td class="py-3 text-center"><button data-open="${x.id}" class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg">€ Régler</button></td>
+      </tr>`;
+    }).join("");
+    return `
+      ${scopeBanner()}
+      <div class="mb-6"><h1 class="text-2xl font-bold text-slate-800">Factures à régler</h1>
+      <p class="text-slate-500 text-sm">Uniquement les factures validées marquées « à régler » (non payées sur l'app). Les factures déjà payées sont dans le registre, statut « payé · à vérifier » ou « payé · rapproché ».</p></div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+        ${kpiCard("Total à régler", U.fmtEUR(total), `${list.length} facture(s)`, "#dc2626", "€")}
+        ${kpiCard("En retard", list.filter(x=>x.echeance && x.echeance < today).length, "échéance dépassée", "#ea580c", "!")}
+      </div>
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-x-auto">
+        <table class="w-full min-w-[680px]">
+          <thead><tr class="text-xs text-slate-400 text-left bg-slate-50">
+            <th class="font-medium py-2.5 pl-3">Fournisseur / n°</th><th class="font-medium py-2.5">Société</th>
+            <th class="font-medium py-2.5">Échéance</th><th class="font-medium py-2.5 text-right">TTC</th>
+            <th class="font-medium py-2.5 text-center">Statut</th><th class="font-medium py-2.5 text-center">Action</th>
+          </tr></thead>
+          <tbody>${rows || `<tr><td colspan="6" class="text-center py-10 text-slate-400">Aucune facture à régler 🎉</td></tr>`}</tbody>
+        </table>
+      </div>`;
+  }
+
   /* ===================== DOSSIERS FOURNISSEURS ===================== */
   function fournisseurs() {
     const dossiers = S.fournisseurDossiers().filter(S.inScope);
@@ -795,5 +850,5 @@ PNG.views = (function () {
     </div>`;
   }
 
-  return { dashboard, dashboardCharts, factures, factureModal, collecte, banque, tvaView, financements, societes, plan, fonctionnalites, registre, fournisseurs, mobileModal, rapproManuelModal };
+  return { dashboard, dashboardCharts, factures, factureModal, collecte, banque, tvaView, financements, societes, plan, fonctionnalites, registre, aReglerView, fournisseurs, mobileModal, rapproManuelModal };
 })();
