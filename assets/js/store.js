@@ -32,10 +32,12 @@ PNG.store = (function () {
       factures: JSON.parse(JSON.stringify(PNG.seed.factures)),
       dossiers: JSON.parse(JSON.stringify(PNG.seed.dossiers)),
       transactions: JSON.parse(JSON.stringify(PNG.seed.transactions)),
-      journal: [],   // écritures comptabilisées
-      inbox: [],     // emails de collecte reçus (avant OCR)
-      activity: [],  // piste d'audit / historique
+      journal: [],      // écritures comptabilisées
+      inbox: [],        // emails de collecte reçus (avant OCR)
+      activity: [],     // piste d'audit / historique
+      fournisseurs: [], // fiches fournisseurs (créées auto)
     };
+    ensureShape();
     if (persist) save();
   }
 
@@ -43,6 +45,72 @@ PNG.store = (function () {
   function ensureShape() {
     if (!state.inbox) state.inbox = [];
     if (!state.activity) state.activity = [];
+    if (!state.fournisseurs || !state.fournisseurs.length) { state.fournisseurs = []; rebuildFournisseurs(); }
+    // champs paiement/drive sur factures anciennes
+    state.factures.forEach((f) => {
+      if (f.statutPaiement === undefined) f.statutPaiement = f.paye ? "paye_attente" : "a_payer";
+      if (f.driveUrl === undefined) f.driveUrl = PNG.drive.path(f.societeId, f.fournisseur, f.fichier);
+    });
+  }
+
+  /* ---- Fiches / dossiers fournisseurs (créés automatiquement) ------ */
+  function fournisseurKey(nom, societeId) { return (nom || "?") + "@" + societeId; }
+
+  function upsertFournisseur(fac) {
+    if (!state.fournisseurs) state.fournisseurs = [];
+    const key = fournisseurKey(fac.fournisseur, fac.societeId);
+    let fo = state.fournisseurs.find((x) => x.key === key);
+    if (!fo) {
+      const ref = U.fournisseurByNom(fac.fournisseur) || {};
+      fo = {
+        key, nom: fac.fournisseur, societeId: fac.societeId,
+        categorie: fac.categorie || ref.categorie || "Divers",
+        compteCharge: fac.compteCharge || ref.compteCharge || "606800",
+        compteTiers: "401" + String(100 + (state.fournisseurs.length + 1)).slice(-3), // 401xxx auxiliaire
+        siren: fac.fournisseurSiren || "", siret: fac.fournisseurSiret || "",
+        naf: fac.fournisseurNaf || "", adresse: fac.fournisseurAdresse || "",
+        sourceSiren: fac.fournisseurSource || "",
+        cree: U.todayISO(),
+      };
+      state.fournisseurs.push(fo);
+      log("Fiche fournisseur créée", `${fo.nom} (${U.companyById(fo.societeId) ? U.companyById(fo.societeId).code : ""})`);
+    } else {
+      // enrichit si la facture apporte des infos data.gouv
+      if (fac.fournisseurSiren && !fo.siren) { fo.siren = fac.fournisseurSiren; fo.siret = fac.fournisseurSiret || fo.siret; fo.naf = fac.fournisseurNaf || fo.naf; fo.adresse = fac.fournisseurAdresse || fo.adresse; fo.sourceSiren = fac.fournisseurSource || fo.sourceSiren; }
+    }
+    return fo;
+  }
+
+  function rebuildFournisseurs() {
+    state.fournisseurs = [];
+    state.factures.slice().reverse().forEach((f) => upsertFournisseur(f));
+  }
+
+  function fournisseurDossiers() {
+    ensureShape();
+    return state.fournisseurs.map((fo) => {
+      const facs = state.factures.filter((f) => fournisseurKey(f.fournisseur, f.societeId) === fo.key);
+      const total = facs.reduce((s, f) => s + f.montantTTC, 0);
+      const du = facs.filter((f) => f.statutPaiement !== "paye_verifie").reduce((s, f) => s + f.montantTTC, 0);
+      return { ...fo, factures: facs, nbFactures: facs.length, total: Math.round(total * 100) / 100, du: Math.round(du * 100) / 100 };
+    }).sort((a, b) => b.total - a.total);
+  }
+
+  // Enrichit une facture via data.gouv (nom -> SIREN). Asynchrone.
+  async function enrichirSiren(factureId) {
+    ensureShape();
+    const f = state.factures.find((x) => x.id === factureId);
+    if (!f) return null;
+    const r = await U.lookupEntreprise(f.fournisseur);
+    if (r.found) {
+      f.fournisseurSiren = r.siren; f.fournisseurSiret = r.siret;
+      f.fournisseurNaf = r.naf; f.fournisseurAdresse = r.adresse;
+      f.fournisseurSource = r.source;
+      upsertFournisseur(f);
+      log("Fournisseur identifié (data.gouv)", `${f.fournisseur} → SIREN ${r.siren}`);
+      save();
+    }
+    return r;
   }
 
   function log(action, detail) {
@@ -134,9 +202,13 @@ PNG.store = (function () {
       compteCharge: acc.compteCharge, compteTva: acc.compteTva,
       echeance: opts.echeance || addDays(U.todayISO(), 30),
       paye: false,
+      statutPaiement: "a_payer",   // a_payer | paye_attente | paye_verifie
+      modePaiement: null, datePaiement: null,
+      fournisseurSiren: "", fournisseurSiret: "", fournisseurNaf: "", fournisseurAdresse: "", fournisseurSource: "",
       ocrConfiance: 0.7 + Math.random() * 0.25, rapproche: false,
       ocrIndices: reco.indices,
     };
+    fac.driveUrl = PNG.drive.path(fac.societeId, fac.fournisseur, fac.fichier);
     fac.doublonDe = (detecterDoublon(fac) || {}).id || null;
     return fac;
   }
@@ -146,12 +218,48 @@ PNG.store = (function () {
     return dt.toISOString().slice(0, 10);
   }
 
-  /* Simulation : scanner / déposer une nouvelle facture (upload manuel) */
+  /* Après création d'une facture : crée la fiche/dossier fournisseur,
+   * archive (lien Drive) et tente l'identification SIREN via data.gouv. */
+  function postCreationFacture(fac, opts) {
+    upsertFournisseur(fac);
+    log("Facture archivée (Drive)", `${fac.fournisseur} → ${fac.driveUrl}`);
+    // Identification data.gouv en tâche de fond (ne bloque pas l'UI)
+    if (!(opts && opts.noLookup)) {
+      enrichirSiren(fac.id).then((r) => {
+        if (r && r.found && typeof window !== "undefined" && window.PNG && window.PNG._render) window.PNG._render();
+      }).catch(() => {});
+    }
+  }
+
+  /* Simulation : déposer une facture (upload manuel depuis l'ordinateur) */
   function scanNouvelleFacture() {
     const m = MODELES_FAC[Math.floor(Math.random() * MODELES_FAC.length)];
     const fac = ocrToFacture(m, { source: "upload" });
     state.factures.unshift(fac);
     log("Facture déposée (upload)", `${fac.fournisseur} · ${U.fmtEUR(fac.montantTTC)}`);
+    postCreationFacture(fac);
+    save();
+    return fac;
+  }
+
+  /* Dépôt MOBILE par un salarié (photo) : il choisit la société (boîte),
+   * et peut pré-saisir le paiement (mode + date) ou « à payer ». */
+  function deposerMobile(opts) {
+    opts = opts || {};
+    const m = MODELES_FAC[Math.floor(Math.random() * MODELES_FAC.length)];
+    const soc = opts.societeId || m.soc;
+    const fac = ocrToFacture({ fournisseur: m.fournisseur, ht: m.ht, soc }, {
+      source: "scan",
+      fichier: `IMG_${Math.floor(1000 + Math.random() * 8999)}.jpg`,
+    });
+    fac.deposePar = opts.salarie || "Salarié (mobile)";
+    if (opts.statutPaiement === "paye" && opts.modePaiement) {
+      fac.statutPaiement = "paye_attente"; fac.paye = true;
+      fac.modePaiement = opts.modePaiement; fac.datePaiement = opts.datePaiement || U.todayISO();
+    }
+    state.factures.unshift(fac);
+    log("Facture déposée (mobile)", `${fac.deposePar} · ${fac.fournisseur} · ${U.companyById(soc) ? U.companyById(soc).code : ""}`);
+    postCreationFacture(fac);
     save();
     return fac;
   }
@@ -196,6 +304,7 @@ PNG.store = (function () {
     state.factures.unshift(fac);
     mail.statut = "traite"; mail.factureId = fac.id;
     log("Facture pré-saisie depuis email", `${fac.fournisseur} · ${U.fmtEUR(fac.montantTTC)}${fac.doublonDe ? " · DOUBLON détecté" : ""}`);
+    postCreationFacture(fac);
     save();
     return fac;
   }
@@ -208,9 +317,65 @@ PNG.store = (function () {
     return n;
   }
 
-  function marquerPaye(id, val) {
+  /* Saisie du paiement par le salarié : mode + date.
+   * statutPaiement passe à "paye_attente" (le logiciel vérifiera la banque). */
+  function saisirPaiement(id, modePaiement, datePaiement) {
     const f = state.factures.find((x) => x.id === id);
-    if (f) { f.paye = val !== false; log(f.paye ? "Facture marquée payée" : "Paiement annulé", f.fournisseur); save(); }
+    if (!f) return;
+    if (!modePaiement) { // repasser à "à payer"
+      f.statutPaiement = "a_payer"; f.paye = false; f.modePaiement = null; f.datePaiement = null;
+      log("Paiement annulé", f.fournisseur); save(); return;
+    }
+    f.modePaiement = modePaiement; f.datePaiement = datePaiement || U.todayISO();
+    f.paye = true; f.statutPaiement = "paye_attente";
+    log("Paiement saisi", `${f.fournisseur} · ${modePaiement} · ${f.datePaiement}`);
+    save();
+  }
+  // compat ancien nom
+  function marquerPaye(id, val) {
+    if (val === false) return saisirPaiement(id, null);
+    return saisirPaiement(id, "virement", U.todayISO());
+  }
+
+  /* VÉRIFICATION BANCAIRE du paiement :
+   * cherche une écriture bancaire (débit) qui correspond au montant TTC de la
+   * facture, sur la même société. Si trouvée, vérifie aussi le MODE de paiement
+   * (libellé bancaire VIR/PRLV/CB…) puis passe la facture en "payé · rapproché"
+   * et lettre la transaction. C'est le rapprochement paiement fournisseur. */
+  function verifierPaiementBanque(factureId) {
+    ensureShape();
+    const f = state.factures.find((x) => x.id === factureId);
+    if (!f) return { ok: false, raison: "facture introuvable" };
+    const tx = state.transactions.find((t) => !t.rapproche && t.sens === "debit"
+      && t.societeId === f.societeId && Math.abs(Math.abs(t.montant) - f.montantTTC) < 0.01);
+    if (!tx) return { ok: false, raison: "aucune écriture bancaire correspondante" };
+    // contrôle du mode de paiement via le libellé bancaire
+    let modeOk = true, modeDetecte = f.modePaiement;
+    if (f.modePaiement) {
+      const mp = U.modePaiementByCode(f.modePaiement);
+      modeOk = mp ? mp.bankRegex.test(tx.libelle) : true;
+    } else {
+      const mp = (PNG.modesPaiement || []).find((m) => m.bankRegex.test(tx.libelle));
+      modeDetecte = mp ? mp.code : null; f.modePaiement = modeDetecte;
+    }
+    // rapproche + comptabilise
+    tx.rapproche = true; tx.lienType = "facture"; tx.lienId = f.id;
+    f.rapproche = true; f.paye = true; f.datePaiement = f.datePaiement || tx.date;
+    f.statutPaiement = "paye_verifie";
+    if (f.statut !== "comptabilise") comptabiliser(f.id);
+    log("Paiement vérifié en banque", `${f.fournisseur} · ${U.fmtEUR(f.montantTTC)} · ${tx.libelle}${modeOk ? "" : " (mode différent !)"}`);
+    save();
+    return { ok: true, tx, modeOk, modeDetecte };
+  }
+
+  // Lance la vérification bancaire sur toutes les factures "payé en attente"
+  function verifierTousPaiements() {
+    ensureShape();
+    let n = 0;
+    state.factures.filter((f) => f.statutPaiement === "paye_attente").forEach((f) => {
+      if (verifierPaiementBanque(f.id).ok) n++;
+    });
+    return n;
   }
 
   /* ------------------------- Rapprochement bancaire ---------------- */
@@ -244,7 +409,12 @@ PNG.store = (function () {
     tx.rapproche = true; tx.lienType = cibleType; tx.lienId = cibleId;
     if (cibleType === "facture") {
       const f = state.factures.find((x) => x.id === cibleId);
-      if (f) { f.rapproche = true; if (f.statut !== "comptabilise") f.statut = "comptabilise"; comptabiliser(f.id); }
+      if (f) {
+        f.rapproche = true; f.paye = true; f.statutPaiement = "paye_verifie";
+        if (!f.modePaiement) { const mp = (PNG.modesPaiement || []).find((m) => m.bankRegex.test(tx.libelle)); if (mp) f.modePaiement = mp.code; }
+        if (!f.datePaiement) f.datePaiement = tx.date;
+        if (f.statut !== "comptabilise") comptabiliser(f.id);
+      }
     } else if (cibleType === "dossier") {
       const d = state.dossiers.find((x) => x.id === cibleId);
       if (d) d.statut = "encaisse";
@@ -324,6 +494,7 @@ PNG.store = (function () {
   }
   const emailsEnAttente = () => { ensureShape(); return state.inbox.filter((m) => m.statut === "recu").length; };
   const doublonsCount = () => state.factures.filter((f) => f.doublonDe).length;
+  const paiementsAVerifier = () => state.factures.filter((f) => f.statutPaiement === "paye_attente").length;
 
   // Série encaissements / décaissements 7 derniers jours
   function serieFlux() {
@@ -340,11 +511,14 @@ PNG.store = (function () {
 
   return {
     load, reset, save, subscribe, get, SOLDES_INIT, log,
-    setFactureSociete, setFactureCompte, validerBrouillon, comptabiliser, scanNouvelleFacture,
-    recevoirEmail, traiterEmail, traiterTousEmails, marquerPaye, detecterDoublon,
+    setFactureSociete, setFactureCompte, validerBrouillon, comptabiliser,
+    scanNouvelleFacture, deposerMobile,
+    recevoirEmail, traiterEmail, traiterTousEmails, detecterDoublon,
+    saisirPaiement, marquerPaye, verifierPaiementBanque, verifierTousPaiements,
+    enrichirSiren, fournisseurDossiers, rebuildFournisseurs,
     suggestionsPour, rapprocher, annulerRapprochement, rapprochementAuto,
     tresorerie, tresorerieTotale, flux, facturesAValider, tauxRapprochement, tva,
     caParSociete, repartitionFinanceurs, serieFlux,
-    aPayer, totalAPayer, emailsEnAttente, doublonsCount,
+    aPayer, totalAPayer, emailsEnAttente, doublonsCount, paiementsAVerifier,
   };
 })();

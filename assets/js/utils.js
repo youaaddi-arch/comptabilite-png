@@ -77,10 +77,52 @@ PNG.utils = (function () {
     String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+  /* -------------------------------------------------------------------
+   * API data.gouv — recherche entreprise (nom -> SIREN/SIRET/NAF/adresse)
+   * Gratuite, sans clé. Renvoie une promesse :
+   *   { found, siren, siret, nom, naf, adresse, source } ou { found:false }
+   * En cas d'absence de réseau (ouverture du fichier en local), échoue
+   * proprement sans bloquer l'app.
+   * ----------------------------------------------------------------- */
+  async function lookupEntreprise(nom) {
+    if (typeof fetch !== "function") return { found: false, raison: "fetch indisponible" };
+    try {
+      const ctrl = new AbortController();
+      const to = setTimeout(() => ctrl.abort(), 6000);
+      const res = await fetch(PNG.dataGouv.url(nom), { signal: ctrl.signal });
+      clearTimeout(to);
+      if (!res.ok) return { found: false, raison: "HTTP " + res.status };
+      const data = await res.json();
+      const r = data && data.results && data.results[0];
+      if (!r) return { found: false, raison: "aucun résultat" };
+      const s = r.siege || {};
+      return {
+        found: true,
+        siren: r.siren,
+        siret: s.siret || "",
+        nom: r.nom_complet || r.nom_raison_sociale || nom,
+        naf: r.activite_principale || s.activite_principale || "",
+        adresse: s.adresse || s.geo_adresse || "",
+        source: "recherche-entreprises.api.gouv.fr",
+      };
+    } catch (err) {
+      return { found: false, raison: (err && err.name === "AbortError") ? "délai dépassé" : "réseau indisponible" };
+    }
+  }
+
+  const modePaiementByCode = (c) => (PNG.modesPaiement || []).find((m) => m.code === c) || null;
+
+  /* Libellés de statut de rapprochement / paiement */
+  const STATUT_PAIEMENT = {
+    a_payer:     { label: "À payer",            cls: "bg-amber-100 text-amber-700" },
+    paye_attente:{ label: "Payé (à vérifier)",  cls: "bg-blue-100 text-blue-700" },
+    paye_verifie:{ label: "Payé · rapproché",   cls: "bg-emerald-100 text-emerald-700" },
+  };
+
   return {
     fmtEUR, fmtNum, fmtPct, fmtDate, todayISO,
     companyById, planByNum, financeurByCode, fournisseurByNom,
-    recognizeCompany, proposeAccounting,
-    STATUT_FACTURE, STATUT_DOSSIER, escapeHtml,
+    recognizeCompany, proposeAccounting, lookupEntreprise, modePaiementByCode,
+    STATUT_FACTURE, STATUT_DOSSIER, STATUT_PAIEMENT, escapeHtml,
   };
 })();

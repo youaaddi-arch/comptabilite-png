@@ -8,6 +8,8 @@
     { route: "dashboard", label: "Tableau de bord", icon: "▦" },
     { route: "collecte", label: "Collecte email", icon: "✉️", badge: () => S.emailsEnAttente() },
     { route: "factures", label: "Factures (OCR)", icon: "📄", badge: () => S.facturesAValider() },
+    { route: "registre", label: "Registre factures", icon: "≡" },
+    { route: "fournisseurs", label: "Fournisseurs", icon: "🏷️" },
     { route: "banque", label: "Banque & rapprochement", icon: "⇄", badge: () => S.get().transactions.filter(t=>!t.rapproche).length },
     { route: "tva", label: "TVA", icon: "T" },
     { route: "financements", label: "Financements / ERP", icon: "🎓" },
@@ -44,6 +46,8 @@
     switch (current.route) {
       case "collecte": html = V.collecte(); break;
       case "factures": html = V.factures(current.filter); break;
+      case "registre": html = V.registre(); break;
+      case "fournisseurs": html = V.fournisseurs(); break;
       case "banque": html = V.banque(); break;
       case "tva": html = V.tvaView(); break;
       case "financements": html = V.financements(current.filter); break;
@@ -61,6 +65,11 @@
   function openModal(id) {
     const wrap = document.getElementById("modal");
     wrap.innerHTML = V.factureModal(id);
+    wrap.classList.remove("hidden");
+  }
+  function openMobileModal() {
+    const wrap = document.getElementById("modal");
+    wrap.innerHTML = V.mobileModal();
     wrap.classList.remove("hidden");
   }
   function closeModal() {
@@ -82,7 +91,7 @@
 
   /* --------------------- Délégation d'événements ------------------- */
   document.addEventListener("click", (ev) => {
-    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-traitemail],[data-rappro],[data-unrappro],#btnScan,#btnSimEmail,#btnTraiterMails,#btnAutoRappro,#closeModal,#modalBack,#btnReset");
+    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-saisirpaie],[data-verifbanque],[data-siren],[data-traitemail],[data-rappro],[data-unrappro],#btnScan,#btnSimEmail,#btnTraiterMails,#btnAutoRappro,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#closeModal,#modalBack,#btnReset");
     if (!t) return;
 
     if (t.id === "modalBack" && ev.target.id === "modalBack") return closeModal();
@@ -95,6 +104,42 @@
     if (t.dataset.valider) { S.validerBrouillon(t.dataset.valider); toast("Facture validée en brouillon ✓", "#2563eb"); closeModal(); render(); return; }
     if (t.dataset.compta) { S.comptabiliser(t.dataset.compta); toast("Écriture comptabilisée ✓", "#059669"); closeModal(); render(); return; }
     if (t.dataset.paye) { S.marquerPaye(t.dataset.paye, t.dataset.val === "1"); toast(t.dataset.val === "1" ? "Facture marquée payée ✓" : "Paiement annulé", "#059669"); openModal(t.dataset.paye); render(); return; }
+    if (t.dataset.saisirpaie) {
+      const id = t.dataset.saisirpaie;
+      const mode = (document.getElementById("selMode") || {}).value || "";
+      const date = (document.getElementById("selDatePaie") || {}).value || S.get && undefined;
+      if (!mode) { toast("Choisissez un mode de paiement", "#dc2626"); return; }
+      S.saisirPaiement(id, mode, date);
+      toast("Paiement enregistré — à vérifier en banque", "#2563eb");
+      openModal(id); render(); return;
+    }
+    if (t.dataset.verifbanque) {
+      const r = S.verifierPaiementBanque(t.dataset.verifbanque);
+      if (r.ok) toast(`Paiement vérifié en banque ✓${r.modeOk === false ? " (⚠︎ mode différent du relevé)" : ""}`, r.modeOk === false ? "#ea580c" : "#059669");
+      else toast("Aucune écriture bancaire correspondante", "#dc2626");
+      openModal(t.dataset.verifbanque); render(); return;
+    }
+    if (t.dataset.siren) {
+      toast("Recherche data.gouv en cours…", "#2563eb");
+      S.enrichirSiren(t.dataset.siren).then((r) => {
+        toast(r && r.found ? `Identifié : SIREN ${r.siren}` : `Non trouvé (${(r&&r.raison)||"?"})`, r && r.found ? "#059669" : "#64748b");
+        openModal(t.dataset.siren); render();
+      });
+      return;
+    }
+    if (t.id === "btnVerifPaie") { const n = S.verifierTousPaiements(); toast(n ? `${n} paiement(s) vérifié(s) en banque ✓` : "Aucun paiement en attente de vérification", n ? "#059669" : "#64748b"); render(); return; }
+    if (t.id === "btnDeposeMobile") { openMobileModal(); return; }
+    if (t.id === "mobEnvoyer") {
+      const soc = (document.getElementById("mobSoc")||{}).value;
+      const salarie = (document.getElementById("mobSalarie")||{}).value || "Salarié (mobile)";
+      const paye = document.querySelector('input[name="mobPaie"]:checked');
+      const opts = { societeId: soc, salarie };
+      if (paye && paye.value === "paye") { opts.statutPaiement = "paye"; opts.modePaiement = (document.getElementById("mobMode")||{}).value || "cb"; opts.datePaiement = (document.getElementById("mobDate")||{}).value; }
+      const f = S.deposerMobile(opts);
+      closeModal();
+      toast(`📱 Facture envoyée : ${f.fournisseur} → ${PNG.utils.companyById(f.societeId).code}`, "#0f172a");
+      render(); setTimeout(() => openModal(f.id), 150); return;
+    }
 
     if (t.id === "btnScan") {
       const f = S.scanNouvelleFacture();
@@ -131,6 +176,10 @@
     const el = ev.target;
     if (el.id === "selSoc") { S.setFactureSociete(el.dataset.id, el.value); toast("Société réaffectée"); openModal(el.dataset.id); }
     if (el.id === "selCpt") { S.setFactureCompte(el.dataset.id, el.value); toast("Compte modifié"); openModal(el.dataset.id); }
+    if (el.name === "mobPaie") {
+      const d = document.getElementById("mobPaieDetails");
+      if (d) d.classList.toggle("hidden", el.value !== "paye");
+    }
   });
 
   window.addEventListener("hashchange", render);

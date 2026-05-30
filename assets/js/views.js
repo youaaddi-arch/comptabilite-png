@@ -30,6 +30,35 @@ PNG.views = (function () {
     const c = U.companyById(id); if (!c) return "—";
     return `<span class="inline-flex items-center gap-1.5 text-sm"><span class="w-2.5 h-2.5 rounded-full" style="background:${c.couleur}"></span>${e(c.raisonSociale)}</span>`;
   }
+  function modePaiementOptions(sel) {
+    return `<option value="">— mode —</option>` + (PNG.modesPaiement || []).map((m) => `<option value="${m.code}" ${m.code === sel ? "selected" : ""}>${m.icon} ${m.libelle}</option>`).join("");
+  }
+  // Bloc paiement : à payer -> saisie mode+date ; payé -> vérification banque
+  function paiementBlock(x) {
+    const sp = U.STATUT_PAIEMENT[x.statutPaiement] || U.STATUT_PAIEMENT.a_payer;
+    if (x.statutPaiement === "paye_verifie") {
+      const mp = U.modePaiementByCode(x.modePaiement);
+      return `<div class="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-sm text-emerald-800">
+        ✓ <strong>Payé et rapproché en banque</strong><br>
+        <span class="text-xs">${mp ? mp.icon + " " + mp.libelle : "mode ?"} · le ${U.fmtDate(x.datePaiement)} · vérifié sur le relevé</span></div>`;
+    }
+    if (x.statutPaiement === "paye_attente") {
+      const mp = U.modePaiementByCode(x.modePaiement);
+      return `<div class="bg-blue-50 border border-blue-100 rounded-xl p-3 mb-2 text-sm">
+          <p class="text-blue-800">${badge("Payé — à vérifier en banque", "bg-blue-100 text-blue-700")}</p>
+          <p class="text-xs text-slate-500 mt-1">Saisi : ${mp ? mp.icon + " " + mp.libelle : "mode ?"} · le ${U.fmtDate(x.datePaiement)}</p>
+        </div>
+        <button data-verifbanque="${x.id}" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">🏦 Vérifier le paiement en banque &amp; rapprocher</button>
+        <button data-paye="${x.id}" data-val="0" class="w-full mt-2 bg-white text-slate-500 border border-slate-200 px-4 py-2 rounded-xl text-xs">Annuler le paiement</button>`;
+    }
+    // à payer : saisie
+    return `<div class="mb-2">${badge(sp.label, sp.cls)} <span class="text-xs text-slate-400">échéance ${U.fmtDate(x.echeance)}</span></div>
+      <div class="flex gap-2 mb-2">
+        <select id="selMode" class="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm">${modePaiementOptions(x.modePaiement)}</select>
+        <input id="selDatePaie" type="date" value="${e(x.datePaiement || U.todayISO())}" class="border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+      </div>
+      <button data-saisirpaie="${x.id}" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">€ Enregistrer le paiement</button>`;
+  }
 
   /* ============================ DASHBOARD ========================== */
   function dashboard() {
@@ -302,9 +331,23 @@ PNG.views = (function () {
             ${champ("N° facture", e(x.numeroFacture), x.ocrConfiance)}
             ${champ("Date", U.fmtDate(x.dateFacture), x.ocrConfiance)}
             ${champ("Échéance", U.fmtDate(x.echeance), null)}
+            ${champ("Montant HT", U.fmtEUR(x.montantHT), null)}
+            ${champ("TVA " + x.tauxTva + "%", U.fmtEUR(x.montantTVA), null)}
             ${champ("Montant TTC", U.fmtEUR(x.montantTTC), x.ocrConfiance)}
 
-            <h3 class="text-xs font-semibold text-slate-400 uppercase mb-2 mt-5">Affectation</h3>
+            <h3 class="text-xs font-semibold text-slate-400 uppercase mb-2 mt-5">Identification fournisseur (data.gouv)</h3>
+            <div class="bg-slate-50 rounded-lg p-3 text-sm mb-2">
+              ${x.fournisseurSiren
+                ? `<div class="flex justify-between"><span class="text-slate-400 text-xs">SIREN</span><span class="font-mono">${e(x.fournisseurSiren)}</span></div>
+                   ${x.fournisseurSiret ? `<div class="flex justify-between"><span class="text-slate-400 text-xs">SIRET siège</span><span class="font-mono">${e(x.fournisseurSiret)}</span></div>` : ""}
+                   ${x.fournisseurNaf ? `<div class="flex justify-between"><span class="text-slate-400 text-xs">Code NAF</span><span>${e(x.fournisseurNaf)}</span></div>` : ""}
+                   ${x.fournisseurAdresse ? `<p class="text-xs text-slate-500 mt-1">${e(x.fournisseurAdresse)}</p>` : ""}
+                   <p class="text-[10px] text-slate-400 mt-1">Source : ${e(x.fournisseurSource||"data.gouv")}</p>`
+                : `<div class="flex items-center justify-between"><span class="text-xs text-slate-500">Non identifié</span><button data-siren="${x.id}" class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg">🔎 Identifier via data.gouv</button></div>`}
+            </div>
+            <a href="${e(x.driveUrl||"#")}" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:underline mb-2">📁 Voir dans le Drive <span class="text-slate-300">(archivage auto)</span></a>
+
+            <h3 class="text-xs font-semibold text-slate-400 uppercase mb-2 mt-3">Affectation</h3>
             <label class="block text-xs text-slate-500 mb-1">Société ${x.societeConfiance < 0.75 ? `<span class="text-red-500">— à confirmer (${Math.round(x.societeConfiance*100)}%)</span>` : ""}</label>
             <select id="selSoc" data-id="${x.id}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-3">${optionsSoc}</select>
             <label class="block text-xs text-slate-500 mb-1">Compte de charge</label>
@@ -323,7 +366,8 @@ PNG.views = (function () {
               ${x.statut !== "comptabilise" ? `<button data-valider="${x.id}" class="flex-1 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 px-4 py-2.5 rounded-xl text-sm font-medium">Valider en brouillon</button>` : ""}
               ${x.statut !== "comptabilise" ? `<button data-compta="${x.id}" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">Comptabiliser</button>` : `<span class="flex-1 text-center text-emerald-600 text-sm py-2.5">✓ Comptabilisé ${x.rapproche ? "· rapproché" : ""}</span>`}
             </div>
-            <button data-paye="${x.id}" data-val="${x.paye ? "0" : "1"}" class="w-full mt-2 ${x.paye ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"} border px-4 py-2 rounded-xl text-sm font-medium">${x.paye ? "€ ✓ Payée — annuler le paiement" : "€ Marquer comme payée"}</button>
+            <h3 class="text-xs font-semibold text-slate-400 uppercase mb-2 mt-5">Paiement</h3>
+            ${paiementBlock(x)}
           </div>
         </div>
       </div>
@@ -544,5 +588,111 @@ PNG.views = (function () {
       <p class="text-xs text-slate-400 mt-2">Sources : documentation publique Pennylane et Yooz. Comparatif indicatif (les offres évoluent). Aucune donnée bancaire ou fiscale réelle n'est utilisée dans ce prototype.</p>`;
   }
 
-  return { dashboard, dashboardCharts, factures, factureModal, collecte, banque, tvaView, financements, societes, plan, fonctionnalites };
+  /* ===================== REGISTRE DES FACTURES (grand tableau) ===== */
+  function registre() {
+    const list = S.get().factures.slice().sort((a, b) => (b.dateFacture || "").localeCompare(a.dateFacture || ""));
+    const rows = list.map((x) => {
+      const sp = U.STATUT_PAIEMENT[x.statutPaiement] || U.STATUT_PAIEMENT.a_payer;
+      const mp = U.modePaiementByCode(x.modePaiement);
+      const cpt = (U.planByNum(x.compteCharge) || {});
+      return `<tr class="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" data-open="${x.id}">
+        <td class="py-2.5 pl-3"><div class="flex items-center gap-1.5"><span>${{email:"✉️",upload:"⬆︎",scan:"📷"}[x.source]||"📄"}</span><span class="text-sm font-medium text-slate-700">${e(x.fournisseur)}</span>${x.doublonDe?`<span class="text-[9px] bg-red-100 text-red-700 px-1 rounded">DBL</span>`:""}</div>
+          ${x.fournisseurSiren?`<span class="text-[10px] text-slate-400 font-mono ml-5">SIREN ${e(x.fournisseurSiren)}</span>`:""}</td>
+        <td class="py-2.5">${societeChip(x.societeId)}</td>
+        <td class="py-2.5 text-xs text-slate-500">${e(x.numeroFacture)}</td>
+        <td class="py-2.5 text-xs text-slate-500">${U.fmtDate(x.dateFacture)}</td>
+        <td class="py-2.5 text-right text-sm">${U.fmtEUR(x.montantHT)}</td>
+        <td class="py-2.5 text-right text-xs text-slate-500">${U.fmtEUR(x.montantTVA)}<br>${x.tauxTva}%</td>
+        <td class="py-2.5 text-right text-sm font-medium">${U.fmtEUR(x.montantTTC)}</td>
+        <td class="py-2.5 text-center"><span class="font-mono text-xs">${e(x.compteCharge)}</span><br><span class="text-[10px] text-slate-400">${e((cpt.libelle||"").slice(0,18))}</span></td>
+        <td class="py-2.5 text-center text-xs">${mp?mp.icon:""} ${badge(sp.label, sp.cls)}</td>
+        <td class="py-2.5 text-center">${x.driveUrl?`<a href="${e(x.driveUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" class="text-blue-600" title="Drive">📁</a>`:""}</td>
+      </tr>`;
+    }).join("");
+    const tHT = list.reduce((s,x)=>s+x.montantHT,0), tTVA=list.reduce((s,x)=>s+x.montantTVA,0), tTTC=list.reduce((s,x)=>s+x.montantTTC,0);
+    return `
+      <div class="flex items-center justify-between mb-6">
+        <div><h1 class="text-2xl font-bold text-slate-800">Registre des factures</h1>
+        <p class="text-slate-500 text-sm">Fournisseur · n° · date · HT · TVA · TTC · compte (plan comptable) · paiement · Drive</p></div>
+        <div class="flex gap-2">
+          <button id="btnVerifPaie" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">🏦 Vérifier paiements (${S.paiementsAVerifier()})</button>
+          <button id="btnDeposeMobile" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl text-sm font-medium">📱 Dépôt mobile</button>
+        </div>
+      </div>
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-x-auto">
+        <table class="w-full min-w-[900px]">
+          <thead><tr class="text-[11px] text-slate-400 text-left bg-slate-50">
+            <th class="font-medium py-2 pl-3">Fournisseur</th><th class="font-medium py-2">Société</th><th class="font-medium py-2">N°</th><th class="font-medium py-2">Date</th>
+            <th class="font-medium py-2 text-right">HT</th><th class="font-medium py-2 text-right">TVA</th><th class="font-medium py-2 text-right">TTC</th>
+            <th class="font-medium py-2 text-center">Compte</th><th class="font-medium py-2 text-center">Paiement</th><th class="font-medium py-2 text-center">Drive</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+          <tfoot><tr class="border-t-2 border-slate-200 bg-slate-50 font-semibold text-sm">
+            <td class="py-2.5 pl-3" colspan="4">TOTAL (${list.length} factures)</td>
+            <td class="py-2.5 text-right">${U.fmtEUR(tHT)}</td><td class="py-2.5 text-right">${U.fmtEUR(tTVA)}</td><td class="py-2.5 text-right">${U.fmtEUR(tTTC)}</td><td colspan="3"></td>
+          </tr></tfoot>
+        </table>
+      </div>`;
+  }
+
+  /* ===================== DOSSIERS FOURNISSEURS ===================== */
+  function fournisseurs() {
+    const dossiers = S.fournisseurDossiers();
+    const cards = dossiers.map((fo) => `
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+        <div class="flex items-start justify-between mb-2">
+          <div class="min-w-0"><p class="font-bold text-slate-800 truncate">${e(fo.nom)}</p>
+          <p class="text-xs text-slate-400">${societeChip(fo.societeId)} · ${e(fo.categorie)}</p></div>
+          <span class="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full whitespace-nowrap">${fo.nbFactures} fact.</span>
+        </div>
+        <dl class="text-xs space-y-1 mb-3">
+          <div class="flex justify-between"><dt class="text-slate-400">Compte tiers</dt><dd class="font-mono">${e(fo.compteTiers)}</dd></div>
+          <div class="flex justify-between"><dt class="text-slate-400">Compte charge</dt><dd class="font-mono">${e(fo.compteCharge)}</dd></div>
+          ${fo.siren?`<div class="flex justify-between"><dt class="text-slate-400">SIREN</dt><dd class="font-mono">${e(fo.siren)}</dd></div>`:`<div class="flex justify-between"><dt class="text-slate-400">SIREN</dt><dd class="text-amber-500">non identifié</dd></div>`}
+          ${fo.naf?`<div class="flex justify-between"><dt class="text-slate-400">NAF</dt><dd>${e(fo.naf)}</dd></div>`:""}
+        </dl>
+        <div class="flex justify-between items-center pt-2 border-t border-slate-100">
+          <div><p class="text-[10px] text-slate-400">Total facturé</p><p class="font-semibold text-slate-700">${U.fmtEUR(fo.total)}</p></div>
+          <div class="text-right"><p class="text-[10px] text-slate-400">Reste dû</p><p class="font-semibold ${fo.du>0?'text-red-600':'text-emerald-600'}">${U.fmtEUR(fo.du)}</p></div>
+        </div>
+      </div>`).join("");
+    return `
+      <div class="mb-6"><h1 class="text-2xl font-bold text-slate-800">Dossiers fournisseurs</h1>
+      <p class="text-slate-500 text-sm">Fiches créées automatiquement à chaque nouvelle facture · compte tiers 401 · identification data.gouv</p></div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">${cards || `<p class="text-slate-400">Aucun fournisseur.</p>`}</div>`;
+  }
+
+  /* Modale de dépôt mobile (simulation du téléphone salarié) */
+  function mobileModal() {
+    const optionsSoc = PNG.companies.filter((c) => S.SOLDES_INIT[c.id]).map((co) => `<option value="${co.id}">${e(co.raisonSociale)}</option>`).join("");
+    return `
+    <div class="fixed inset-0 bg-slate-900/50 z-40 flex items-center justify-center p-4" id="modalBack">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm" onclick="event.stopPropagation()">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <h2 class="font-bold text-slate-800">📱 Dépôt mobile — salarié</h2>
+          <button id="closeModal" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+        </div>
+        <div class="p-5 space-y-3">
+          <p class="text-xs text-slate-500">Le salarié photographie la facture, choisit la <strong>société</strong> (boîte) et indique si elle est payée.</p>
+          <div class="border-2 border-dashed border-slate-200 rounded-xl py-8 text-center text-slate-400 text-sm">📷 Prendre / importer la photo<br><span class="text-xs">(simulée pour la démo)</span></div>
+          <label class="block text-xs text-slate-500">Société destinataire</label>
+          <select id="mobSoc" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm">${optionsSoc}</select>
+          <label class="block text-xs text-slate-500">Votre nom</label>
+          <input id="mobSalarie" type="text" placeholder="Ex. Aïcha (Saint-Denis)" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+          <div class="flex gap-2">
+            <label class="flex-1 flex items-center gap-2 border border-slate-200 rounded-lg px-3 py-2 text-sm cursor-pointer"><input type="radio" name="mobPaie" value="apayer" checked> À payer</label>
+            <label class="flex-1 flex items-center gap-2 border border-slate-200 rounded-lg px-3 py-2 text-sm cursor-pointer"><input type="radio" name="mobPaie" value="paye"> Déjà payé</label>
+          </div>
+          <div id="mobPaieDetails" class="hidden grid grid-cols-2 gap-2">
+            <select id="mobMode" class="border border-slate-200 rounded-lg px-3 py-2 text-sm">${modePaiementOptions("")}</select>
+            <input id="mobDate" type="date" value="${U.todayISO()}" class="border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <button id="mobEnvoyer" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">Envoyer la facture</button>
+          <p class="text-[10px] text-slate-400 text-center">La pré-saisie OCR + l'archivage Drive se font automatiquement à l'envoi.</p>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  return { dashboard, dashboardCharts, factures, factureModal, collecte, banque, tvaView, financements, societes, plan, fonctionnalites, registre, fournisseurs, mobileModal };
 })();

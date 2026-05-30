@@ -438,6 +438,39 @@ PNG.opcoList = ["OPCO EP", "AKTO", "ATLAS", "Constructys", "OPCO Santé", "OPCO 
 PNG.emailCapture = (companyId) => `factures+${companyId}@parisnordgroupe.fr`;
 
 /* ---------------------------------------------------------------------
+ * MODES DE PAIEMENT (saisis par le salarié, vérifiés ensuite en banque)
+ * ------------------------------------------------------------------- */
+PNG.modesPaiement = [
+  { code: "virement",    libelle: "Virement",            icon: "🏦", bankRegex: /VIR|VIREMENT/i },
+  { code: "prelevement", libelle: "Prélèvement",         icon: "🔁", bankRegex: /PRLV|PRELEVEMENT|PRÉLÈVEMENT/i },
+  { code: "cb",          libelle: "Carte bancaire",      icon: "💳", bankRegex: /CB |CARTE|PAIEMENT CB/i },
+  { code: "cheque",      libelle: "Chèque",              icon: "🧾", bankRegex: /CHQ|CHEQUE|CHÈQUE/i },
+  { code: "especes",     libelle: "Espèces",             icon: "💶", bankRegex: /ESPECES|ESPÈCES|CAISSE/i },
+];
+
+/* ---------------------------------------------------------------------
+ * API ENTREPRISE — data.gouv (gratuite, sans clé)
+ * Recherche d'entreprises : nom -> SIREN/SIRET/NAF/adresse.
+ * Doc : https://recherche-entreprises.api.gouv.fr
+ * ------------------------------------------------------------------- */
+PNG.dataGouv = {
+  base: "https://recherche-entreprises.api.gouv.fr/search",
+  // construit l'URL de recherche
+  url: (q) => `https://recherche-entreprises.api.gouv.fr/search?q=${encodeURIComponent(q)}&page=1&per_page=1`,
+};
+
+/* ---------------------------------------------------------------------
+ * ARCHIVAGE DRIVE — chemin/lien généré par société et fournisseur.
+ * ⚠️ Lien simulé pour la démo : l'archivage réel nécessite de connecter
+ * un Google Drive (OAuth) ou un coffre-fort (à brancher).
+ * ------------------------------------------------------------------- */
+PNG.drive = {
+  base: "https://drive.google.com/drive/u/0/folders/PNG-FACTURES",
+  path: (societeId, fournisseur, fichier) =>
+    `https://drive.google.com/drive/u/0/folders/PNG-FACTURES/${societeId}/${(fournisseur||"divers").replace(/[^A-Za-z0-9]+/g, "-")}/${encodeURIComponent(fichier||"facture.pdf")}`,
+};
+
+/* ---------------------------------------------------------------------
  * MATRICE DE FONCTIONNALITÉS — référence factuelle Pennylane / Yooz
  * statut : "fait" (implémenté dans le prototype, données simulées),
  *          "partiel", "abrancher" (architecture prête, intégration à venir)
