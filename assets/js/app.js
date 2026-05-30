@@ -6,12 +6,14 @@
 
   const NAV = [
     { route: "dashboard", label: "Tableau de bord", icon: "▦" },
+    { route: "collecte", label: "Collecte email", icon: "✉️", badge: () => S.emailsEnAttente() },
     { route: "factures", label: "Factures (OCR)", icon: "📄", badge: () => S.facturesAValider() },
     { route: "banque", label: "Banque & rapprochement", icon: "⇄", badge: () => S.get().transactions.filter(t=>!t.rapproche).length },
     { route: "tva", label: "TVA", icon: "T" },
     { route: "financements", label: "Financements / ERP", icon: "🎓" },
     { route: "societes", label: "Sociétés", icon: "🏢" },
     { route: "plan", label: "Plan comptable", icon: "≣" },
+    { route: "fonctionnalites", label: "Fonctionnalités", icon: "★" },
   ];
 
   let current = { route: "dashboard", filter: null };
@@ -40,12 +42,14 @@
     const view = document.getElementById("view");
     let html = "";
     switch (current.route) {
+      case "collecte": html = V.collecte(); break;
       case "factures": html = V.factures(current.filter); break;
       case "banque": html = V.banque(); break;
       case "tva": html = V.tvaView(); break;
       case "financements": html = V.financements(current.filter); break;
       case "societes": html = V.societes(); break;
       case "plan": html = V.plan(); break;
+      case "fonctionnalites": html = V.fonctionnalites(); break;
       default: html = V.dashboard();
     }
     view.innerHTML = html;
@@ -78,7 +82,7 @@
 
   /* --------------------- Délégation d'événements ------------------- */
   document.addEventListener("click", (ev) => {
-    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-rappro],[data-unrappro],#btnScan,#btnAutoRappro,#closeModal,#modalBack,#btnReset");
+    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-traitemail],[data-rappro],[data-unrappro],#btnScan,#btnSimEmail,#btnTraiterMails,#btnAutoRappro,#closeModal,#modalBack,#btnReset");
     if (!t) return;
 
     if (t.id === "modalBack" && ev.target.id === "modalBack") return closeModal();
@@ -90,12 +94,29 @@
 
     if (t.dataset.valider) { S.validerBrouillon(t.dataset.valider); toast("Facture validée en brouillon ✓", "#2563eb"); closeModal(); render(); return; }
     if (t.dataset.compta) { S.comptabiliser(t.dataset.compta); toast("Écriture comptabilisée ✓", "#059669"); closeModal(); render(); return; }
+    if (t.dataset.paye) { S.marquerPaye(t.dataset.paye, t.dataset.val === "1"); toast(t.dataset.val === "1" ? "Facture marquée payée ✓" : "Paiement annulé", "#059669"); openModal(t.dataset.paye); render(); return; }
 
     if (t.id === "btnScan") {
       const f = S.scanNouvelleFacture();
       const c = PNG.utils.companyById(f.societeId);
       toast(`OCR : ${f.fournisseur} → ${c ? c.raisonSociale : "?"} (${Math.round(f.societeConfiance*100)}%)`, "#7c3aed");
       render(); setTimeout(() => openModal(f.id), 150); return;
+    }
+    if (t.id === "btnSimEmail") {
+      const m = S.recevoirEmail();
+      toast(`✉️ Email reçu de ${m.de} — facture en attente d'OCR`, "#7c3aed");
+      if (location.hash.slice(1).split("/")[0] !== "collecte") location.hash = "#collecte"; else render();
+      return;
+    }
+    if (t.dataset.traitemail) {
+      const f = S.traiterEmail(t.dataset.traitemail);
+      if (f) { const c = PNG.utils.companyById(f.societeId); toast(`Pré-saisie OCR : ${f.fournisseur} → ${c ? c.raisonSociale : "?"}${f.doublonDe ? " ⚠︎ doublon" : ""}`, "#059669"); render(); setTimeout(() => openModal(f.id), 150); }
+      return;
+    }
+    if (t.id === "btnTraiterMails") {
+      const n = S.traiterTousEmails();
+      toast(n ? `${n} facture(s) pré-saisie(s) depuis les emails ✓` : "Aucun email à traiter", n ? "#059669" : "#64748b");
+      render(); return;
     }
 
     if (t.dataset.rappro) { S.rapprocher(t.dataset.rappro, t.dataset.ctype, t.dataset.cid); toast("Écriture rapprochée ✓", "#059669"); render(); return; }

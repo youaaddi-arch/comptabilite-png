@@ -22,7 +22,7 @@ PNG.store = (function () {
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
-      if (raw) { state = JSON.parse(raw); return; }
+      if (raw) { state = JSON.parse(raw); ensureShape(); return; }
     } catch (e) { /* ignore */ }
     reset(false);
   }
@@ -32,9 +32,23 @@ PNG.store = (function () {
       factures: JSON.parse(JSON.stringify(PNG.seed.factures)),
       dossiers: JSON.parse(JSON.stringify(PNG.seed.dossiers)),
       transactions: JSON.parse(JSON.stringify(PNG.seed.transactions)),
-      journal: [], // écritures comptabilisées
+      journal: [],   // écritures comptabilisées
+      inbox: [],     // emails de collecte reçus (avant OCR)
+      activity: [],  // piste d'audit / historique
     };
     if (persist) save();
+  }
+
+  // Compat : si un état chargé d'une version antérieure n'a pas ces champs
+  function ensureShape() {
+    if (!state.inbox) state.inbox = [];
+    if (!state.activity) state.activity = [];
+  }
+
+  function log(action, detail) {
+    ensureShape();
+    state.activity.unshift({ ts: Date.now(), date: U.todayISO(), action, detail });
+    if (state.activity.length > 200) state.activity.pop();
   }
 
   function save() {
@@ -74,40 +88,129 @@ PNG.store = (function () {
     save();
   }
 
-  /* Simulation : scanner / déposer une nouvelle facture (OCR) */
-  function scanNouvelleFacture() {
-    const modeles = [
-      { fournisseur: "Bureau Vallée", ht: 154.90, soc: "pnbs-rouen" },
-      { fournisseur: "Engie", ht: 880.40, soc: "pnbs-sud" },
-      { fournisseur: "Microsoft France", ht: 432.00, soc: "dbs" },
-      { fournisseur: "Meta Platforms Ireland", ht: 1260.00, soc: "pnbs-lille" },
-      { fournisseur: "OpenAI LLC", ht: 96.00, soc: "pnff" },
-      { fournisseur: "SCI Lillenium Invest", ht: 5200.00, soc: "pnbs-lille" },
-    ];
-    const m = modeles[Math.floor(Math.random() * modeles.length)];
+  /* Modèles de factures fournisseurs pour la démo (collecte/scan) */
+  const MODELES_FAC = [
+    { fournisseur: "Bureau Vallée", ht: 154.90, soc: "pnbs-rouen" },
+    { fournisseur: "Engie", ht: 880.40, soc: "pnbs-sud" },
+    { fournisseur: "Microsoft France", ht: 432.00, soc: "dbs" },
+    { fournisseur: "Meta Platforms Ireland", ht: 1260.00, soc: "pnbs-lille" },
+    { fournisseur: "OpenAI LLC", ht: 96.00, soc: "pnff" },
+    { fournisseur: "SCI Lillenium Invest", ht: 5200.00, soc: "pnbs-lille" },
+    { fournisseur: "Amazon Business", ht: 312.75, soc: "pba" },
+    { fournisseur: "Google Workspace", ht: 248.00, soc: "pnbs-paris" },
+  ];
+
+  /* Détection de doublon : même société + même fournisseur + même n° (ou même
+   * montant TTC à 1 cent près et date proche). Comme Pennylane / Yooz. */
+  function detecterDoublon(fac) {
+    return state.factures.find((f) => f.id !== fac.id && f.societeId === fac.societeId && (
+      (f.numeroFacture && fac.numeroFacture && f.numeroFacture === fac.numeroFacture && f.fournisseur === fac.fournisseur) ||
+      (f.fournisseur === fac.fournisseur && Math.abs(f.montantTTC - fac.montantTTC) < 0.01 && f.dateFacture === fac.dateFacture)
+    )) || null;
+  }
+
+  /* Construit une facture océrisée à partir d'un modèle (cœur OCR partagé) */
+  function ocrToFacture(m, opts) {
+    opts = opts || {};
     const c = U.companyById(m.soc);
-    // Texte OCR simulé contenant la raison sociale + SIRET de la société destinataire
-    const fauxTexte = `FACTURE ${m.fournisseur} CLIENT ${c.raisonSociale} ${c.siret} ${c.campuses[0] || ""}`;
+    // Texte OCR simulé contenant la raison sociale + SIRET du destinataire
+    const fauxTexte = `FACTURE ${m.fournisseur} CLIENT ${c.raisonSociale} ${c.siret} ${(c.campuses && c.campuses[0]) || ""}`;
     const reco = U.recognizeCompany(fauxTexte);
     const acc = U.proposeAccounting(m.fournisseur, m.ht, null);
     const f = U.fournisseurByNom(m.fournisseur);
     const n = state.factures.length + 1;
     const fac = {
-      id: "FAC-NEW-" + Date.now(),
+      id: "FAC-NEW-" + Date.now() + "-" + n,
       type: "achat",
-      fichier: `scan_${U.todayISO().replace(/-/g, "")}_${100000 + Math.floor(Math.random() * 899999)}.pdf`,
+      fichier: opts.fichier || `scan_${U.todayISO().replace(/-/g, "")}_${100000 + Math.floor(Math.random() * 899999)}.pdf`,
+      source: opts.source || "upload",      // upload | email | scan
+      sourceEmail: opts.sourceEmail || null,
       dateDepot: U.todayISO(), statut: "a_valider",
       fournisseur: m.fournisseur, categorie: f ? f.categorie : "Divers",
       societeId: reco.societeId || m.soc, societeConfiance: reco.confiance,
-      numeroFacture: "AUTO-" + (10000 + n), dateFacture: U.todayISO(),
+      numeroFacture: opts.numeroFacture || ("AUTO-" + (10000 + n)),
+      dateFacture: U.todayISO(),
       montantHT: m.ht, tauxTva: acc.tauxTva, montantTVA: acc.tva, montantTTC: acc.ttc,
       compteCharge: acc.compteCharge, compteTva: acc.compteTva,
+      echeance: opts.echeance || addDays(U.todayISO(), 30),
+      paye: false,
       ocrConfiance: 0.7 + Math.random() * 0.25, rapproche: false,
       ocrIndices: reco.indices,
     };
+    fac.doublonDe = (detecterDoublon(fac) || {}).id || null;
+    return fac;
+  }
+
+  function addDays(iso, d) {
+    const dt = new Date(iso + "T00:00:00"); dt.setDate(dt.getDate() + d);
+    return dt.toISOString().slice(0, 10);
+  }
+
+  /* Simulation : scanner / déposer une nouvelle facture (upload manuel) */
+  function scanNouvelleFacture() {
+    const m = MODELES_FAC[Math.floor(Math.random() * MODELES_FAC.length)];
+    const fac = ocrToFacture(m, { source: "upload" });
     state.factures.unshift(fac);
+    log("Facture déposée (upload)", `${fac.fournisseur} · ${U.fmtEUR(fac.montantTTC)}`);
     save();
     return fac;
+  }
+
+  /* -------- Collecte par EMAIL (cœur Pennylane / Yooz) --------------
+   * 1) recevoirEmail() : un email avec PJ arrive dans la boîte de collecte
+   *    de la société (état "reçu", pas encore traité).
+   * 2) traiterEmail() : l'OCR s'exécute sur la PJ -> crée la facture
+   *    pré-saisie (comme la "presaise" automatique demandée).
+   * ----------------------------------------------------------------- */
+  function recevoirEmail(companyId) {
+    ensureShape();
+    // société ciblée par l'adresse (sinon aléatoire)
+    const candidats = MODELES_FAC.filter((m) => !companyId || m.soc === companyId);
+    const m = (candidats.length ? candidats : MODELES_FAC)[Math.floor(Math.random() * (candidats.length ? candidats.length : MODELES_FAC.length))];
+    const cid = companyId || m.soc;
+    const mail = {
+      id: "MAIL-" + Date.now(),
+      recu: U.todayISO(),
+      de: `compta@${m.fournisseur.toLowerCase().replace(/[^a-z]/g, "")}.com`,
+      a: PNG.emailCapture(cid),
+      societeId: cid,
+      objet: `Votre facture ${m.fournisseur}`,
+      piece: `${m.fournisseur.replace(/[^A-Za-z]/g, "_")}_facture.pdf`,
+      modele: { fournisseur: m.fournisseur, ht: m.ht, soc: cid },
+      statut: "recu",    // recu | traite
+      factureId: null,
+    };
+    state.inbox.unshift(mail);
+    log("Email reçu (collecte)", `${mail.de} → ${mail.a}`);
+    save();
+    return mail;
+  }
+
+  function traiterEmail(mailId) {
+    ensureShape();
+    const mail = state.inbox.find((x) => x.id === mailId);
+    if (!mail || mail.statut === "traite") return null;
+    const fac = ocrToFacture(mail.modele, {
+      source: "email", sourceEmail: mail.de, fichier: mail.piece,
+    });
+    state.factures.unshift(fac);
+    mail.statut = "traite"; mail.factureId = fac.id;
+    log("Facture pré-saisie depuis email", `${fac.fournisseur} · ${U.fmtEUR(fac.montantTTC)}${fac.doublonDe ? " · DOUBLON détecté" : ""}`);
+    save();
+    return fac;
+  }
+
+  // Traite toute la boîte d'un coup
+  function traiterTousEmails() {
+    ensureShape();
+    let n = 0;
+    state.inbox.filter((m) => m.statut === "recu").forEach((m) => { if (traiterEmail(m.id)) n++; });
+    return n;
+  }
+
+  function marquerPaye(id, val) {
+    const f = state.factures.find((x) => x.id === id);
+    if (f) { f.paye = val !== false; log(f.paye ? "Facture marquée payée" : "Paiement annulé", f.fournisseur); save(); }
   }
 
   /* ------------------------- Rapprochement bancaire ---------------- */
@@ -211,6 +314,17 @@ PNG.store = (function () {
     return map;
   }
 
+  // Échéancier fournisseur : factures non payées (à régler)
+  function aPayer(societeId) {
+    return state.factures.filter((f) => f.type === "achat" && !f.paye && (!societeId || f.societeId === societeId)
+      && (f.statut === "brouillon" || f.statut === "comptabilise" || f.statut === "a_valider"));
+  }
+  function totalAPayer(societeId) {
+    return Math.round(aPayer(societeId).reduce((s, f) => s + f.montantTTC, 0) * 100) / 100;
+  }
+  const emailsEnAttente = () => { ensureShape(); return state.inbox.filter((m) => m.statut === "recu").length; };
+  const doublonsCount = () => state.factures.filter((f) => f.doublonDe).length;
+
   // Série encaissements / décaissements 7 derniers jours
   function serieFlux() {
     const jours = [];
@@ -225,10 +339,12 @@ PNG.store = (function () {
   }
 
   return {
-    load, reset, save, subscribe, get, SOLDES_INIT,
+    load, reset, save, subscribe, get, SOLDES_INIT, log,
     setFactureSociete, setFactureCompte, validerBrouillon, comptabiliser, scanNouvelleFacture,
+    recevoirEmail, traiterEmail, traiterTousEmails, marquerPaye, detecterDoublon,
     suggestionsPour, rapprocher, annulerRapprochement, rapprochementAuto,
     tresorerie, tresorerieTotale, flux, facturesAValider, tauxRapprochement, tva,
     caParSociete, repartitionFinanceurs, serieFlux,
+    aPayer, totalAPayer, emailsEnAttente, doublonsCount,
   };
 })();

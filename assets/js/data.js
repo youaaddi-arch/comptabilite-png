@@ -426,3 +426,66 @@ PNG.financeurs = [
 ];
 
 PNG.opcoList = ["OPCO EP", "AKTO", "ATLAS", "Constructys", "OPCO Santé", "OPCO 2i", "Uniformation"];
+
+/* ---------------------------------------------------------------------
+ * ADRESSE DE COLLECTE PAR EMAIL (comme Pennylane / Yooz)
+ * Chaque société dispose d'une adresse dédiée : toute facture transférée
+ * (en pièce jointe) y est capturée puis océrisée automatiquement.
+ * ⚠️ Format PROPOSÉ pour la démo — à activer sur votre domaine / votre
+ * fournisseur (Pennylane, Yooz…). Ces boîtes ne reçoivent pas de mail tant
+ * qu'elles ne sont pas configurées côté serveur de messagerie.
+ * ------------------------------------------------------------------- */
+PNG.emailCapture = (companyId) => `factures+${companyId}@parisnordgroupe.fr`;
+
+/* ---------------------------------------------------------------------
+ * MATRICE DE FONCTIONNALITÉS — référence factuelle Pennylane / Yooz
+ * statut : "fait" (implémenté dans le prototype, données simulées),
+ *          "partiel", "abrancher" (architecture prête, intégration à venir)
+ * ------------------------------------------------------------------- */
+PNG.featureMatrix = [
+  { cat: "Collecte des factures", items: [
+    { f: "Email de collecte dédié par société", penny: true, yooz: true, statut: "fait" },
+    { f: "Upload / glisser-déposer de fichiers", penny: true, yooz: true, statut: "fait" },
+    { f: "Scan mobile (photo de facture)", penny: true, yooz: true, statut: "abrancher" },
+    { f: "Connecteurs Drive / Dropbox", penny: true, yooz: true, statut: "abrancher" },
+    { f: "Factur-X / e-invoicing (réforme 2026)", penny: true, yooz: true, statut: "abrancher" },
+  ]},
+  { cat: "Reconnaissance & pré-saisie (OCR / IA)", items: [
+    { f: "Extraction OCR des données de facture", penny: true, yooz: true, statut: "fait" },
+    { f: "Reconnaissance du fournisseur", penny: true, yooz: true, statut: "fait" },
+    { f: "Reconnaissance de la société destinataire", penny: true, yooz: true, statut: "fait" },
+    { f: "Détection des doublons", penny: true, yooz: true, statut: "fait" },
+    { f: "Pré-comptabilisation (compte + TVA)", penny: true, yooz: true, statut: "fait" },
+    { f: "Ventilation analytique (par campus)", penny: true, yooz: true, statut: "partiel" },
+  ]},
+  { cat: "Workflow & paiement fournisseur", items: [
+    { f: "Circuit de validation / approbation", penny: true, yooz: true, statut: "partiel" },
+    { f: "Échéancier fournisseur (à payer)", penny: true, yooz: true, statut: "fait" },
+    { f: "Rapprochement bon de commande (3 voies)", penny: false, yooz: true, statut: "abrancher" },
+    { f: "Paiement fournisseur (virement SEPA)", penny: true, yooz: true, statut: "abrancher" },
+  ]},
+  { cat: "Banque & trésorerie", items: [
+    { f: "Synchronisation bancaire (agrégation)", penny: true, yooz: false, statut: "abrancher" },
+    { f: "Rapprochement bancaire automatique", penny: true, yooz: false, statut: "fait" },
+    { f: "Lettrage des écritures", penny: true, yooz: false, statut: "fait" },
+    { f: "Trésorerie temps réel", penny: true, yooz: false, statut: "fait" },
+    { f: "Trésorerie prévisionnelle", penny: true, yooz: false, statut: "abrancher" },
+  ]},
+  { cat: "Ventes & encaissements", items: [
+    { f: "Dossiers de financement (OPCO/CPF/FT)", penny: false, yooz: false, statut: "fait" },
+    { f: "Facturation clients / devis", penny: true, yooz: false, statut: "partiel" },
+    { f: "Relances clients", penny: true, yooz: false, statut: "abrancher" },
+  ]},
+  { cat: "Comptabilité & fiscal", items: [
+    { f: "Écriture comptable en brouillon", penny: true, yooz: true, statut: "fait" },
+    { f: "Déclaration de TVA (calcul CA3)", penny: true, yooz: false, statut: "fait" },
+    { f: "Export FEC / journaux comptables", penny: true, yooz: true, statut: "abrancher" },
+    { f: "Archivage à valeur probante (coffre-fort)", penny: true, yooz: true, statut: "abrancher" },
+    { f: "Piste d'audit (historique)", penny: true, yooz: true, statut: "partiel" },
+  ]},
+  { cat: "Multi-sociétés & pilotage", items: [
+    { f: "Gestion multi-sociétés (40 entités)", penny: true, yooz: true, statut: "fait" },
+    { f: "Tableau de bord & KPI", penny: true, yooz: true, statut: "fait" },
+    { f: "Collaboration avec l'expert-comptable", penny: true, yooz: false, statut: "abrancher" },
+  ]},
+];

@@ -71,10 +71,16 @@ PNG.views = (function () {
       </div>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-        ${kpiCard("Factures à traiter", aValider, "OCR / à valider", "#ea580c", "▦")}
-        ${kpiCard("Chiffre d'affaires", U.fmtEUR(caTotal), "Dossiers facturés", "#0ea5e9", "▲")}
+        ${kpiCard("Factures à traiter", aValider, `${S.emailsEnAttente()} email(s) · ${S.doublonsCount()} doublon(s)`, "#ea580c", "▦")}
+        ${kpiCard("À payer (fournisseurs)", U.fmtEUR(S.totalAPayer()), `${S.aPayer().length} facture(s) non réglée(s)`, "#dc2626", "€")}
         ${kpiCard("TVA collectée", U.fmtEUR(tva.collectee), "Mois en cours", "#16a34a", "T")}
         ${kpiCard("TVA déductible", U.fmtEUR(tva.deductible), `À ${tva.aDecaisser>=0?'décaisser':'récupérer'} : ${U.fmtEUR(Math.abs(tva.aDecaisser))}`, "#db2777", "T")}
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+        ${kpiCard("Chiffre d'affaires", U.fmtEUR(caTotal), "Dossiers facturés", "#0ea5e9", "▲")}
+        ${kpiCard("Collecte email", S.emailsEnAttente(), "facture(s) en attente d'OCR", "#7c3aed", "✉")}
+        ${kpiCard("Sociétés actives", PNG.companies.filter(c=>S.SOLDES_INIT[c.id]).length, `sur ${PNG.companies.length} entités`, "#0891b2", "🏢")}
+        ${kpiCard("Factures comptabilisées", S.get().factures.filter(x=>x.statut==="comptabilise").length, "ce mois", "#16a34a", "✓")}
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
@@ -157,26 +163,42 @@ PNG.views = (function () {
     };
     const tab = (key, label) => `<button data-filter="${key}" class="px-3 py-1.5 rounded-lg text-sm font-medium ${f === key ? "bg-blue-600 text-white" : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"}">${label} <span class="opacity-70">${counts[key]}</span></button>`;
 
+    const srcIcon = { email: "✉️", upload: "⬆︎", scan: "📷" };
     const rows = list.map((x) => {
       const st = U.STATUT_FACTURE[x.statut];
       const lowConf = x.societeConfiance < 0.75;
       return `<tr class="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" data-open="${x.id}">
-        <td class="py-3 pl-2"><div class="flex items-center gap-2"><span class="text-slate-400">📄</span><div><p class="text-sm font-medium text-slate-700">${e(x.fournisseur)}</p><p class="text-xs text-slate-400">${e(x.fichier)}</p></div></div></td>
+        <td class="py-3 pl-2"><div class="flex items-center gap-2"><span class="text-slate-400" title="${e(x.source||'upload')}">${srcIcon[x.source]||"📄"}</span><div><p class="text-sm font-medium text-slate-700">${e(x.fournisseur)} ${x.doublonDe ? `<span class="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full align-middle">DOUBLON</span>` : ""}</p><p class="text-xs text-slate-400">${e(x.fichier)}</p></div></div></td>
         <td class="py-3">${societeChip(x.societeId)} ${lowConf ? `<span class="ml-1 text-xs text-red-500" title="Confiance faible">⚠︎</span>` : ""}</td>
         <td class="py-3 text-sm text-slate-600">${e(x.numeroFacture)}</td>
         <td class="py-3 text-sm text-slate-500">${U.fmtDate(x.dateFacture)}</td>
         <td class="py-3 text-right text-sm font-medium text-slate-700">${U.fmtEUR(x.montantTTC)}</td>
         <td class="py-3 text-center">${confBadge(x.ocrConfiance)}</td>
-        <td class="py-3 text-center">${badge(st.label, st.cls)}</td>
+        <td class="py-3 text-center">${badge(st.label, st.cls)} ${x.paye ? `<span class="ml-1 text-emerald-500" title="Payée">€✓</span>` : ""}</td>
       </tr>`;
     }).join("");
+
+    const enAttente = S.emailsEnAttente();
 
     return `
       <div class="flex items-center justify-between mb-6">
         <div><h1 class="text-2xl font-bold text-slate-800">Factures fournisseurs</h1>
-        <p class="text-slate-500 text-sm">Capture · OCR · reconnaissance société · affectation au plan comptable</p></div>
-        <button id="btnScan" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-sm flex items-center gap-2">⬆︎ Déposer / scanner une facture</button>
+        <p class="text-slate-500 text-sm">Collecte (email / upload) · OCR · reconnaissance société · pré-saisie · affectation au plan comptable</p></div>
+        <div class="flex gap-2">
+          <button id="btnSimEmail" class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-sm flex items-center gap-2">✉️ Simuler une facture reçue par email</button>
+          <button id="btnScan" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-sm flex items-center gap-2">⬆︎ Déposer une facture</button>
+        </div>
       </div>
+
+      <!-- Bandeau collecte par email (cœur Pennylane / Yooz) -->
+      <div class="bg-gradient-to-r from-violet-50 to-blue-50 border border-violet-100 rounded-2xl p-4 mb-5 flex items-center justify-between flex-wrap gap-3">
+        <div class="text-sm">
+          <p class="font-semibold text-slate-700">📨 Collecte automatique par email</p>
+          <p class="text-slate-500">Transférez vos factures à <code class="bg-white px-1.5 py-0.5 rounded border border-violet-200 text-violet-700">factures+<i>société</i>@parisnordgroupe.fr</code> → la <strong>pré-saisie OCR</strong> se fait automatiquement à la réception. <span class="text-amber-600">(Adresses à activer sur votre messagerie.)</span></p>
+        </div>
+        ${enAttente ? `<button id="btnTraiterMails" class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap">⚙︎ Traiter ${enAttente} email(s) en attente</button>` : `<a href="#collecte" class="text-violet-700 text-sm font-medium whitespace-nowrap hover:underline">Voir la boîte de collecte →</a>`}
+      </div>
+
       <div class="flex flex-wrap gap-2 mb-4">${tab("tous","Toutes")}${tab("ocr","OCR en cours")}${tab("a_valider","À valider")}${tab("brouillon","Brouillon")}${tab("comptabilise","Comptabilisé")}</div>
       <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         <table class="w-full">
@@ -188,6 +210,50 @@ PNG.views = (function () {
           <tbody>${rows || `<tr><td colspan="7" class="text-center py-8 text-slate-400">Aucune facture</td></tr>`}</tbody>
         </table>
       </div>`;
+  }
+
+  /* ===================== COLLECTE PAR EMAIL ======================== */
+  function collecte() {
+    const inbox = S.get().inbox || [];
+    const rows = inbox.map((m) => {
+      const traite = m.statut === "traite";
+      return `<div class="bg-white rounded-xl border ${traite ? "border-emerald-100" : "border-violet-200"} p-4 flex items-start justify-between gap-3">
+        <div class="flex items-start gap-3 min-w-0">
+          <span class="w-9 h-9 rounded-lg flex items-center justify-center text-white ${traite ? "bg-emerald-500" : "bg-violet-500"}">✉️</span>
+          <div class="min-w-0">
+            <p class="text-sm font-medium text-slate-700 truncate">${e(m.objet)}</p>
+            <p class="text-xs text-slate-400 truncate">De ${e(m.de)} → ${e(m.a)}</p>
+            <p class="text-xs text-slate-400">📎 ${e(m.piece)} · reçu le ${U.fmtDate(m.recu)} · ${societeChip(m.societeId)}</p>
+          </div>
+        </div>
+        <div class="text-right whitespace-nowrap">
+          ${traite
+            ? `${badge("Pré-saisie ✓","bg-emerald-100 text-emerald-700")}<br><button class="text-xs text-violet-700 hover:underline mt-1" data-open="${m.factureId}">Voir la facture →</button>`
+            : `${badge("À traiter","bg-violet-100 text-violet-700")}<br><button class="text-xs bg-violet-600 text-white px-3 py-1.5 rounded-lg mt-1" data-traitemail="${m.id}">⚙︎ Lancer l'OCR</button>`}
+        </div>
+      </div>`;
+    }).join("");
+
+    const enAttente = S.emailsEnAttente();
+    return `
+      <div class="flex items-center justify-between mb-6">
+        <div><h1 class="text-2xl font-bold text-slate-800">Collecte par email</h1>
+        <p class="text-slate-500 text-sm">Boîte de réception des factures transférées · pré-saisie OCR automatique (comme Pennylane / Yooz)</p></div>
+        <div class="flex gap-2">
+          ${enAttente ? `<button id="btnTraiterMails" class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">⚙︎ Tout traiter (${enAttente})</button>` : ""}
+          <button id="btnSimEmail" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">✉️ Simuler une réception</button>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl border border-slate-100 p-5 mb-5">
+        <h3 class="font-semibold text-slate-700 mb-3 text-sm">Adresses de collecte par société</h3>
+        <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          ${PNG.companies.filter((c) => S.SOLDES_INIT[c.id]).map((c) => `<div class="flex items-center gap-2 text-xs bg-slate-50 rounded-lg px-3 py-2"><span class="w-2 h-2 rounded-full" style="background:${c.couleur}"></span><span class="text-slate-500 truncate">${e(c.raisonSociale)}</span><code class="ml-auto text-violet-700">${e(PNG.emailCapture(c.id))}</code></div>`).join("")}
+        </div>
+        <p class="text-xs text-amber-600 mt-3">⚠️ Adresses proposées pour la démo : elles ne reçoivent réellement les emails qu'une fois configurées sur votre serveur de messagerie / votre outil (Pennylane, Yooz…).</p>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">${rows || `<div class="col-span-2 text-center py-12 text-slate-400 bg-white rounded-2xl border border-slate-100">Aucun email reçu pour l'instant.<br>Cliquez sur « Simuler une réception » pour voir la pré-saisie automatique.</div>`}</div>`;
   }
 
   /* Modale détail facture : aperçu OCR + écriture proposée */
@@ -204,9 +270,10 @@ PNG.views = (function () {
     <div class="fixed inset-0 bg-slate-900/50 z-40 flex items-center justify-center p-4" id="modalBack">
       <div class="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[92vh] overflow-y-auto" onclick="event.stopPropagation()">
         <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 sticky top-0 bg-white">
-          <div><h2 class="font-bold text-slate-800">${e(x.fournisseur)} · ${e(x.numeroFacture)}</h2><p class="text-xs text-slate-400">${e(x.fichier)}</p></div>
+          <div><h2 class="font-bold text-slate-800">${e(x.fournisseur)} · ${e(x.numeroFacture)}</h2><p class="text-xs text-slate-400">${e(x.fichier)} · ${x.source === "email" ? `reçu par email (${e(x.sourceEmail||"")})` : x.source === "scan" ? "scan" : "dépôt manuel"}</p></div>
           <button id="closeModal" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
         </div>
+        ${x.doublonDe ? `<div class="bg-red-50 border-b border-red-100 px-6 py-2.5 text-sm text-red-700">⚠︎ <strong>Doublon potentiel détecté</strong> : une facture du même fournisseur avec le même montant/numéro existe déjà. Vérifiez avant de comptabiliser.</div>` : ""}
         <div class="grid md:grid-cols-2 gap-0">
           <!-- Aperçu document simulé -->
           <div class="p-6 bg-slate-50 border-r border-slate-100">
@@ -234,6 +301,7 @@ PNG.views = (function () {
             ${champ("Fournisseur", e(x.fournisseur), x.ocrConfiance)}
             ${champ("N° facture", e(x.numeroFacture), x.ocrConfiance)}
             ${champ("Date", U.fmtDate(x.dateFacture), x.ocrConfiance)}
+            ${champ("Échéance", U.fmtDate(x.echeance), null)}
             ${champ("Montant TTC", U.fmtEUR(x.montantTTC), x.ocrConfiance)}
 
             <h3 class="text-xs font-semibold text-slate-400 uppercase mb-2 mt-5">Affectation</h3>
@@ -255,6 +323,7 @@ PNG.views = (function () {
               ${x.statut !== "comptabilise" ? `<button data-valider="${x.id}" class="flex-1 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 px-4 py-2.5 rounded-xl text-sm font-medium">Valider en brouillon</button>` : ""}
               ${x.statut !== "comptabilise" ? `<button data-compta="${x.id}" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">Comptabiliser</button>` : `<span class="flex-1 text-center text-emerald-600 text-sm py-2.5">✓ Comptabilisé ${x.rapproche ? "· rapproché" : ""}</span>`}
             </div>
+            <button data-paye="${x.id}" data-val="${x.paye ? "0" : "1"}" class="w-full mt-2 ${x.paye ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"} border px-4 py-2 rounded-xl text-sm font-medium">${x.paye ? "€ ✓ Payée — annuler le paiement" : "€ Marquer comme payée"}</button>
           </div>
         </div>
       </div>
@@ -434,5 +503,46 @@ PNG.views = (function () {
       </div>`;
   }
 
-  return { dashboard, dashboardCharts, factures, factureModal, banque, tvaView, financements, societes, plan };
+  /* ===================== FONCTIONNALITÉS (Pennylane / Yooz) ======== */
+  function fonctionnalites() {
+    const stPill = {
+      fait:      badge("Fait", "bg-emerald-100 text-emerald-700"),
+      partiel:   badge("Partiel", "bg-amber-100 text-amber-700"),
+      abrancher: badge("À brancher", "bg-slate-100 text-slate-500"),
+    };
+    const check = (v) => v ? `<span class="text-emerald-500">✓</span>` : `<span class="text-slate-300">—</span>`;
+    const blocs = PNG.featureMatrix.map((g) => `
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden mb-4">
+        <div class="px-5 py-3 bg-slate-50 border-b border-slate-100 font-semibold text-slate-700 text-sm">${e(g.cat)}</div>
+        <table class="w-full text-sm">
+          <thead><tr class="text-xs text-slate-400 text-left">
+            <th class="font-medium py-2 pl-5">Fonctionnalité</th>
+            <th class="font-medium py-2 text-center w-24">Pennylane</th>
+            <th class="font-medium py-2 text-center w-20">Yooz</th>
+            <th class="font-medium py-2 text-center w-32">Compta PNG</th>
+          </tr></thead>
+          <tbody>
+            ${g.items.map((it) => `<tr class="border-t border-slate-100">
+              <td class="py-2.5 pl-5 text-slate-700">${e(it.f)}</td>
+              <td class="py-2.5 text-center">${check(it.penny)}</td>
+              <td class="py-2.5 text-center">${check(it.yooz)}</td>
+              <td class="py-2.5 text-center">${stPill[it.statut]}</td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>`).join("");
+
+    return `
+      <div class="mb-6"><h1 class="text-2xl font-bold text-slate-800">Fonctionnalités — couverture Pennylane / Yooz</h1>
+      <p class="text-slate-500 text-sm">Comparatif factuel des fonctions des deux outils et leur état dans Compta PNG.</p></div>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+        <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-sm"><strong class="text-emerald-700">Fait</strong> — implémenté dans le prototype (données simulées).</div>
+        <div class="bg-amber-50 border border-amber-100 rounded-xl p-3 text-sm"><strong class="text-amber-700">Partiel</strong> — base présente, à approfondir.</div>
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm"><strong class="text-slate-600">À brancher</strong> — architecture prête, intégration réelle à venir.</div>
+      </div>
+      ${blocs}
+      <p class="text-xs text-slate-400 mt-2">Sources : documentation publique Pennylane et Yooz. Comparatif indicatif (les offres évoluent). Aucune donnée bancaire ou fiscale réelle n'est utilisée dans ce prototype.</p>`;
+  }
+
+  return { dashboard, dashboardCharts, factures, factureModal, collecte, banque, tvaView, financements, societes, plan, fonctionnalites };
 })();

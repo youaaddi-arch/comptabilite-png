@@ -33,14 +33,24 @@ PNG.seed = (function () {
       montantTTC: r2(o.ht + tva),
       compteCharge: o.compte || f.compteCharge || "606800",
       compteTva: "445660",
+      source: o.source || "upload",
+      sourceEmail: o.sourceEmail || null,
+      echeance: o.echeance || addDays(o.dateFacture, 30),
+      paye: !!o.paye,
+      doublonDe: null,
       ocrConfiance: o.ocr,
       rapproche: !!o.rapproche,
     };
   };
+  function addDays(iso, d) {
+    const dt = new Date(iso + "T00:00:00"); dt.setDate(dt.getDate() + d);
+    return dt.toISOString().slice(0, 10);
+  }
 
   const factures = [
-    F({ fichier: "facture_orange_mai2026.pdf", dateDepot: "2026-05-29", statut: "a_valider",
+    F({ fichier: "Orange_Business_facture.pdf", dateDepot: "2026-05-29", statut: "a_valider",
         fournisseur: "Orange Business", societeId: "pnbs-paris", societeConfiance: 0.97,
+        source: "email", sourceEmail: "facturation@orange.com",
         num: "OR-2026-44821", dateFacture: "2026-05-27", ht: 412.50, taux: 20, ocr: 0.96 }),
     F({ fichier: "loyer_poterie_mai.pdf", dateDepot: "2026-05-28", statut: "a_valider",
         fournisseur: "SCI Foncière Poterie", societeId: "pnbs-paris", societeConfiance: 0.99,
