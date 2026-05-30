@@ -77,10 +77,13 @@ PNG.ocr = (function () {
     return isNaN(n) ? null : Math.round(n * 100) / 100;
   }
 
-  function montantApresMot(t, motsRegex) {
-    const re = new RegExp("(?:" + motsRegex + ")[^0-9\\-]{0,20}(-?\\d[\\d\\s.,]*\\d|\\d)", "i");
+  function montantApresMot(t, motsRegex, decimalesObligatoires) {
+    // capture un nombre après le mot-clé ; ignore un éventuel "20 %" placé juste après
+    const re = new RegExp("(?:" + motsRegex + ")\\s*(?:\\d{1,2}[.,]?\\d?\\s*%)?[^0-9\\-]{0,15}(-?\\d[\\d\\s]*[.,]\\d{2}|-?\\d[\\d\\s]*\\d|\\d)", "i");
     const m = t.match(re);
-    return m ? parseMontant(m[1]) : null;
+    if (!m) return null;
+    if (decimalesObligatoires && !/[.,]\d{2}/.test(m[1])) return null;
+    return parseMontant(m[1]);
   }
   function tousMontants(t) {
     const out = [];
@@ -106,14 +109,15 @@ PNG.ocr = (function () {
     const numM = t.match(/(?:facture|invoice|n[°o])\s*[:#]?\s*([A-Z0-9][A-Z0-9\-\/]{2,})/i);
     const numeroFacture = numM ? numM[1] : "";
 
-    // SIREN/SIRET présents sur la facture (14 ou 9 chiffres)
-    const siretM = upper.replace(/\s/g, "").match(/\b(\d{14})\b/);
-    const sirenM = upper.replace(/\s/g, "").match(/\b(\d{9})\b/);
+    // SIREN/SIRET présents sur la facture (14 ou 9 chiffres, espaces tolérés)
+    const compact = upper.replace(/[ .]/g, "");
+    const siretM = compact.match(/(\d{14})/);
+    const sirenM = compact.match(/(?:SIREN[:\s]*)(\d{9})/) || compact.match(/(\d{9})(?!\d)/);
 
-    // Montants
+    // Montants (TVA en € : on exige des décimales pour éviter de capter le taux)
     let ttc = montantApresMot(t, "total\\s*ttc|net\\s*[àa]\\s*payer|montant\\s*ttc|total\\s*t\\.?t\\.?c");
     let ht = montantApresMot(t, "total\\s*ht|montant\\s*ht|total\\s*h\\.?t");
-    let tva = montantApresMot(t, "t\\.?v\\.?a\\.?|montant\\s*tva");
+    let tva = montantApresMot(t, "t\\.?v\\.?a\\.?|montant\\s*tva", true);
     // Taux de TVA
     const tauxM = t.match(/(\d{1,2}(?:[.,]\d)?)\s*%/);
     let taux = tauxM ? parseMontant(tauxM[1]) : 20;
