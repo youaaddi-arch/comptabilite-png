@@ -272,6 +272,50 @@ PNG.store = (function () {
     return dt.toISOString().slice(0, 10);
   }
 
+  /* Crée une facture à partir d'un VRAI résultat OCR (champs extraits par
+   * PNG.ocr) + la société choisie. apercu = dataURL de l'image (aperçu). */
+  function creerDepuisOCR(champs, opts) {
+    opts = opts || {};
+    champs = champs || {};
+    const soc = opts.societeId || (PNG.companies.find((c) => SOLDES_INIT[c.id]) || {}).id;
+    const fournisseur = (champs.fournisseur || "Fournisseur à préciser").trim();
+    const fref = U.fournisseurByNom(fournisseur) || {};
+    const ht = champs.montantHT != null ? champs.montantHT : 0;
+    const taux = champs.tauxTva != null ? champs.tauxTva : 20;
+    const tva = champs.montantTVA != null ? champs.montantTVA : Math.round((ht * taux / 100) * 100) / 100;
+    const ttc = champs.montantTTC != null ? champs.montantTTC : Math.round((ht + tva) * 100) / 100;
+    const n = state.factures.length + 1;
+    const fac = {
+      id: "FAC-OCR-" + Date.now() + "-" + n,
+      type: "achat",
+      fichier: opts.fichier || "document.pdf",
+      source: opts.source || "upload",
+      sourceEmail: opts.sourceEmail || null,
+      emailDestination: opts.emailDestination || null,
+      dateDepot: U.todayISO(), dateImport: U.todayISO(), statut: "a_valider",
+      dateReglement: null, dateDecaissement: null, regleParSocieteId: null,
+      fournisseur, categorie: fref.categorie || "Divers",
+      societeId: soc, societeConfiance: 1,
+      numeroFacture: champs.numeroFacture || ("AUTO-" + (10000 + n)),
+      dateFacture: champs.dateFacture || U.todayISO(),
+      montantHT: ht, tauxTva: taux, montantTVA: tva, montantTTC: ttc,
+      compteCharge: fref.compteCharge || "606800", compteTva: "445660",
+      echeance: addDays(champs.dateFacture || U.todayISO(), 30),
+      paye: false, statutPaiement: "a_payer", modePaiement: null, datePaiement: null,
+      fournisseurSiren: champs.siren || "", fournisseurSiret: champs.siret || "",
+      fournisseurNaf: "", fournisseurAdresse: "", fournisseurSource: champs.siret ? "OCR (facture)" : "",
+      ocrConfiance: 0.9, rapproche: false, ocrIndices: ["OCR réel"],
+      apercu: opts.apercu || null, ocrTexte: champs.texteBrut || "",
+    };
+    fac.driveUrl = PNG.drive.path(fac.societeId, fac.fournisseur, fac.fichier);
+    fac.doublonDe = (detecterDoublon(fac) || {}).id || null;
+    state.factures.unshift(fac);
+    log("Facture chargée (OCR réel)", `${fac.fournisseur} · ${U.fmtEUR(fac.montantTTC)}`);
+    postCreationFacture(fac);
+    save();
+    return fac;
+  }
+
   /* Après création d'une facture : crée la fiche/dossier fournisseur,
    * archive (lien Drive) et tente l'identification SIREN via data.gouv. */
   function postCreationFacture(fac, opts) {
@@ -606,7 +650,7 @@ PNG.store = (function () {
     load, reset, save, subscribe, get, SOLDES_INIT, log,
     getScope, setScope, inScope,
     setFactureSociete, setFactureCompte, validerBrouillon, comptabiliser,
-    scanNouvelleFacture, deposerMobile,
+    scanNouvelleFacture, deposerMobile, creerDepuisOCR,
     recevoirEmail, traiterEmail, traiterTousEmails, detecterDoublon,
     saisirPaiement, marquerPaye, verifierPaiementBanque, verifierTousPaiements,
     enrichirSiren, fournisseurDossiers, rebuildFournisseurs,

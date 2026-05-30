@@ -90,6 +90,68 @@
     wrap.innerHTML = "";
   }
 
+  /* --------- Chargement d'un vrai fichier + OCR réel --------------- */
+  function ouvrirFichier() {
+    let input = document.getElementById("fileInput");
+    if (!input) {
+      input = document.createElement("input");
+      input.type = "file"; input.id = "fileInput";
+      input.accept = "application/pdf,image/*";
+      input.style.display = "none";
+      document.body.appendChild(input);
+      input.addEventListener("change", (e) => {
+        const file = e.target.files && e.target.files[0];
+        input.value = "";
+        if (file) traiterFichier(file);
+      });
+    }
+    input.click();
+  }
+
+  function ocrOverlay(msg, pct) {
+    let o = document.getElementById("ocrOverlay");
+    if (!o) {
+      o = document.createElement("div");
+      o.id = "ocrOverlay";
+      o.className = "fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4";
+      document.body.appendChild(o);
+    }
+    o.innerHTML = `<div class="bg-white rounded-2xl p-6 w-full max-w-sm text-center">
+      <div class="text-4xl mb-3">🔍</div>
+      <p class="font-semibold text-slate-800 mb-1">Océrisation en cours…</p>
+      <p class="text-xs text-slate-500 mb-3">${msg || ""}</p>
+      <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden"><div class="bg-blue-600 h-2 transition-all" style="width:${Math.round((pct||0)*100)}%"></div></div>
+      <p class="text-xs text-slate-400 mt-2">Le traitement se fait dans votre navigateur (aucun envoi serveur).</p>
+    </div>`;
+  }
+  function ocrOverlayClose() { const o = document.getElementById("ocrOverlay"); if (o) o.remove(); }
+
+  async function traiterFichier(file) {
+    if (!PNG.ocr || !PNG.ocr.dispo()) {
+      toast("Module OCR non chargé (vérifiez la connexion internet)", "#dc2626");
+      return;
+    }
+    ocrOverlay("Lecture du fichier…", 0.05);
+    try {
+      const { apercu, champs } = await PNG.ocr.analyser(file, (p, m) => ocrOverlay(m, p));
+      ocrOverlayClose();
+      // société : celle filtrée si une est sélectionnée, sinon la 1re active
+      const scope = S.getScope();
+      const f = S.creerDepuisOCR(champs, {
+        societeId: scope || undefined, source: "upload",
+        fichier: file.name, apercu,
+      });
+      const c = PNG.utils.companyById(f.societeId);
+      toast(`Facture océrisée : ${f.fournisseur || "?"} → ${c ? c.code : "?"}`, "#059669");
+      if (location.hash.slice(1).split("/")[0] !== "factures") location.hash = "#factures/a_saisir";
+      render();
+      setTimeout(() => openModal(f.id), 150);
+    } catch (err) {
+      ocrOverlayClose();
+      toast("Échec de l'océrisation : " + (err && err.message ? err.message : "erreur"), "#dc2626");
+    }
+  }
+
   /* --------------------------- Toast ------------------------------- */
   let toastT;
   function toast(msg, color) {
@@ -166,12 +228,7 @@
       render(); setTimeout(() => openModal(f.id), 150); return;
     }
 
-    if (t.id === "btnScan") {
-      const f = S.scanNouvelleFacture();
-      const c = PNG.utils.companyById(f.societeId);
-      toast(`OCR : ${f.fournisseur} → ${c ? c.raisonSociale : "?"} (${Math.round(f.societeConfiance*100)}%)`, "#7c3aed");
-      render(); setTimeout(() => openModal(f.id), 150); return;
-    }
+    if (t.id === "btnScan") { ouvrirFichier(); return; }
     if (t.id === "btnSimEmail") {
       const scope = S.getScope();
       const f = S.recevoirEmail(scope || undefined);

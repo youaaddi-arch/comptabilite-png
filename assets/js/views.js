@@ -349,9 +349,11 @@ PNG.views = (function () {
         </div>
         ${x.doublonDe ? `<div class="bg-red-50 border-b border-red-100 px-6 py-2.5 text-sm text-red-700">⚠︎ <strong>Doublon potentiel détecté</strong> : une facture du même fournisseur avec le même montant/numéro existe déjà. Vérifiez avant de comptabiliser.</div>` : ""}
         <div class="grid md:grid-cols-2 gap-0">
-          <!-- Aperçu document simulé -->
+          <!-- Aperçu document : image réelle si OCR, sinon reconstitution -->
           <div class="p-6 bg-slate-50 border-r border-slate-100">
-            <div class="bg-white border border-slate-200 rounded-lg p-5 shadow-sm text-sm">
+            ${x.apercu
+              ? `<img src="${x.apercu}" alt="Aperçu de la facture" class="w-full rounded-lg border border-slate-200 shadow-sm" />`
+              : `<div class="bg-white border border-slate-200 rounded-lg p-5 shadow-sm text-sm">
               <div class="flex justify-between items-start mb-4">
                 <div><p class="font-bold text-slate-800">${e(x.fournisseur)}</p><p class="text-xs text-slate-400">${e(x.categorie)}</p></div>
                 <div class="text-right"><p class="font-semibold">FACTURE</p><p class="text-xs text-slate-500">${e(x.numeroFacture)}</p></div>
@@ -365,8 +367,8 @@ PNG.views = (function () {
                 <tr><td class="text-slate-500 py-1">TVA ${x.tauxTva}%</td><td class="text-right">${U.fmtEUR(x.montantTVA)}</td></tr>
                 <tr class="font-bold border-t border-slate-200"><td class="py-1">Total TTC</td><td class="text-right">${U.fmtEUR(x.montantTTC)}</td></tr>
               </tbody></table>
-            </div>
-            <p class="text-xs text-slate-400 mt-3">Confiance OCR globale : ${confBadge(x.ocrConfiance)}${(x.ocrIndices && x.ocrIndices.length) ? ` · Indices : ${e(x.ocrIndices.join(", "))}` : ""}</p>
+            </div>`}
+            <p class="text-xs text-slate-400 mt-3">Confiance OCR globale : ${confBadge(x.ocrConfiance)}${(x.ocrIndices && x.ocrIndices.length) ? ` · ${e(x.ocrIndices.join(", "))}` : ""}</p>
           </div>
           <!-- Champs extraits + écriture -->
           <div class="p-6">
@@ -406,7 +408,7 @@ PNG.views = (function () {
                 ? `<div class="flex justify-between"><span class="text-slate-400 text-xs">SIREN</span><span class="font-mono">${e(x.fournisseurSiren)}</span></div>
                    ${x.fournisseurSiret ? `<div class="flex justify-between"><span class="text-slate-400 text-xs">SIRET siège</span><span class="font-mono">${e(x.fournisseurSiret)}</span></div>` : ""}
                    ${x.fournisseurNaf ? `<div class="flex justify-between"><span class="text-slate-400 text-xs">Code NAF</span><span>${e(x.fournisseurNaf)}</span></div>` : ""}
-                   ${x.fournisseurAdresse ? `<p class="text-xs text-slate-500 mt-1">${e(x.fournisseurAdresse)}</p>` : ""}
+                   ${x.fournisseurAdresse ? `<div class="mt-1"><span class="text-slate-400 text-xs">Adresse du siège</span><p class="text-xs text-slate-600">${e(x.fournisseurAdresse)}</p></div>` : ""}
                    <p class="text-[10px] text-slate-400 mt-1">Source : ${e(x.fournisseurSource||"data.gouv")}</p>`
                 : `<div class="flex items-center justify-between"><span class="text-xs text-slate-500">Non identifié</span><button data-siren="${x.id}" class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg">🔎 Identifier via data.gouv</button></div>`}
             </div>

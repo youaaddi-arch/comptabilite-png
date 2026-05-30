@@ -9,6 +9,10 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Chart.js (graphiques KPI) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- Tesseract.js (OCR réel, gratuit, dans le navigateur) -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <!-- PDF.js (rendu des PDF pour l'OCR) — build legacy UMD -->
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/legacy/build/pdf.min.js"></script>
   <link rel="stylesheet" href="assets/css/app.css" />
   <script>
     tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter','system-ui','sans-serif'] } } } };
@@ -60,6 +64,7 @@
   <script src="assets/js/data.js"></script>
   <script src="assets/js/seed.js"></script>
   <script src="assets/js/utils.js"></script>
+  <script src="assets/js/ocr.js"></script>
   <script src="assets/js/store.js"></script>
   <script src="assets/js/views.js"></script>
   <script src="assets/js/app.js"></script>
