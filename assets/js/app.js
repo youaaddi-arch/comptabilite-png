@@ -388,8 +388,10 @@
       const engine = (document.querySelector('input[name="ocrEngine"]:checked') || {}).value || "ocrspace";
       const ks = (document.getElementById("ocrKeySpace") || {}).value || "";
       const km = (document.getElementById("ocrKeyMindee") || {}).value || "";
-      if (PNG.ocr && PNG.ocr.setConfig) PNG.ocr.setConfig({ engine: engine, ocrspaceKey: ks.trim(), mindeeKey: km.trim() });
-      toast("Réglages OCR enregistrés ✓ (moteur : " + engine + ")", "#059669");
+      const kg = (document.getElementById("ocrKeyGemini") || {}).value || "";
+      const useG = !!(document.getElementById("ocrUseGemini") || {}).checked;
+      if (PNG.ocr && PNG.ocr.setConfig) PNG.ocr.setConfig({ engine: engine, ocrspaceKey: ks.trim(), mindeeKey: km.trim(), geminiKey: kg.trim(), useGemini: useG });
+      toast(useG && kg.trim() ? "Réglages enregistrés ✓ — IA Gemini activée 🧠" : "Réglages OCR enregistrés ✓", "#059669");
       return;
     }
     if (t.id === "btnReset") { if (confirm("Réinitialiser toutes les données de démonstration ?")) { S.reset(); toast("Données réinitialisées", "#64748b"); render(); } return; }

@@ -549,13 +549,78 @@ PNG.ocr = (function () {
    * ------------------------------------------------------------------- */
   const CFG_KEY = "compta-png-ocr-cfg";
   function getConfig() {
-    var def = { engine: "ocrspace", ocrspaceKey: "", mindeeKey: "" };
+    var def = { engine: "ocrspace", ocrspaceKey: "", mindeeKey: "", geminiKey: "", useGemini: true };
     try { return Object.assign(def, JSON.parse(localStorage.getItem(CFG_KEY) || "{}")); }
     catch (e) { return def; }
   }
   function setConfig(c) {
     var cur = getConfig();
     try { localStorage.setItem(CFG_KEY, JSON.stringify(Object.assign(cur, c))); } catch (e) {}
+  }
+
+  /* ---- IA Gemini (GRATUIT) : range le texte brut dans les bonnes cases -----
+   * On envoie le texte OCR + la liste de NOS sociétés ; l'IA renvoie un JSON
+   * structuré (fournisseur, destinataire, n°, dates, HT/TVA/TTC). */
+  async function geminiStructurer(texteBrut, onProgress) {
+    var cfg = getConfig();
+    if (!cfg.geminiKey) return null;            // pas de clé -> on n'utilise pas l'IA
+    if (!texteBrut || texteBrut.replace(/\s/g, "").length < 20) return null;
+    if (onProgress) onProgress(0.9, "Analyse par l'IA (Gemini)…");
+
+    var nos = (window.PNG && PNG.companies || []).map(function (c) {
+      return { id: c.id, nom: c.raisonSociale, siren: c.siren || "", siret: c.siret || "" };
+    });
+
+    var prompt =
+      "Tu es un expert comptable. Voici le TEXTE BRUT d'une facture fournisseur (océrisé).\n" +
+      "Extrais les informations et renvoie UNIQUEMENT un JSON valide, sans texte autour, au format :\n" +
+      '{"fournisseur":"","fournisseurSiren":"","fournisseurSiret":"","numeroFacture":"","dateFacture":"AAAA-MM-JJ","montantHT":0,"montantTVA":0,"montantTTC":0,"tauxTva":0,"destinataireId":"","destinataireNom":""}\n\n' +
+      "RÈGLES :\n" +
+      "- 'fournisseur' = celui qui ÉMET la facture (en-tête / pied de page), JAMAIS un libellé comme 'Émetteur'.\n" +
+      "- 'destinataire' = le CLIENT facturé. Compare-le à NOS SOCIÉTÉS ci-dessous : si c'est l'une d'elles, mets son id dans 'destinataireId'.\n" +
+      "- Une de nos sociétés PEUT être le fournisseur d'une autre : ne te base pas sur 'c'est une de nos sociétés' pour décider qui est fournisseur, base-toi sur la POSITION (émetteur vs client).\n" +
+      "- Montants en nombres (point décimal). Si 'TVA non applicable' (art. 293B), montantTVA=0 et tauxTva=0.\n" +
+      "- Si une info est absente, mets \"\" ou 0. Ne devine pas un SIREN.\n\n" +
+      "NOS SOCIÉTÉS : " + JSON.stringify(nos) + "\n\n" +
+      "TEXTE BRUT DE LA FACTURE :\n" + texteBrut.slice(0, 8000);
+
+    var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + encodeURIComponent(cfg.geminiKey);
+    var resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0, responseMimeType: "application/json" },
+      }),
+    });
+    if (!resp.ok) throw new Error("Gemini HTTP " + resp.status + (resp.status === 400 ? " (clé invalide ?)" : ""));
+    var data = await resp.json();
+    var txt = data && data.candidates && data.candidates[0] && data.candidates[0].content
+      && data.candidates[0].content.parts && data.candidates[0].content.parts[0].text;
+    if (!txt) return null;
+    var j;
+    try { j = JSON.parse(txt); } catch (e) {
+      var m = txt.match(/\{[\s\S]*\}/); if (!m) return null; j = JSON.parse(m[0]);
+    }
+    return j;
+  }
+
+  // Fusionne le résultat IA dans les champs (l'IA prime si renseignée)
+  function appliquerGemini(champs, j) {
+    if (!j) return champs;
+    var num = function (x) { var n = parseFloat(String(x).replace(",", ".")); return isNaN(n) ? null : Math.round(n * 100) / 100; };
+    if (j.fournisseur) champs.fournisseur = String(j.fournisseur).trim();
+    if (j.fournisseurSiren) champs.siren = String(j.fournisseurSiren).replace(/\D/g, "");
+    if (j.fournisseurSiret) champs.siret = String(j.fournisseurSiret).replace(/\D/g, "");
+    if (j.numeroFacture) champs.numeroFacture = String(j.numeroFacture).trim();
+    if (j.dateFacture && /\d{4}-\d{2}-\d{2}/.test(j.dateFacture)) champs.dateFacture = j.dateFacture;
+    if (num(j.montantHT) != null) champs.montantHT = num(j.montantHT);
+    if (num(j.montantTVA) != null) champs.montantTVA = num(j.montantTVA);
+    if (num(j.montantTTC) != null) champs.montantTTC = num(j.montantTTC);
+    if (num(j.tauxTva) != null) champs.tauxTva = num(j.tauxTva);
+    if (j.destinataireId) champs.societeHint = j.destinataireId;
+    champs.moteur = (champs.moteur || "OCR") + " + IA Gemini";
+    return champs;
   }
 
   function fileToBase64(file) {
@@ -667,6 +732,28 @@ PNG.ocr = (function () {
     return ratio < 0.30; // moins de 30% de fragments isolés = texte propre
   }
 
+  // Applique l'IA Gemini (si clé) sur le texte, puis recontrôle la cohérence.
+  async function affinerIA(champs, onProgress) {
+    var cfg = getConfig();
+    if (cfg.useGemini && cfg.geminiKey && champs && champs.texteBrut) {
+      try {
+        var j = await geminiStructurer(champs.texteBrut, onProgress);
+        if (j) {
+          appliquerGemini(champs, j);
+          // recalcule l'alerte de cohérence sur les nouveaux montants
+          var r2 = function (x) { return Math.round((x || 0) * 100) / 100; };
+          var al = [];
+          if (champs.montantHT != null && champs.montantTVA != null && champs.montantTTC != null) {
+            if (Math.abs(r2(champs.montantHT + champs.montantTVA) - champs.montantTTC) > 0.02)
+              al.push("HT (" + r2(champs.montantHT) + ") + TVA (" + r2(champs.montantTVA) + ") = " + r2(champs.montantHT + champs.montantTVA) + " != TTC (" + r2(champs.montantTTC) + ")");
+          }
+          champs.alerteMontants = al.length ? al : null;
+        }
+      } catch (e) { champs.moteur = (champs.moteur || "OCR") + " (IA indispo)"; }
+    }
+    return champs;
+  }
+
   async function analyser(file, onProgress) {
     const isPdf = /pdf$/i.test(file.type) || /\.pdf$/i.test(file.name);
     if (onProgress) onProgress(0.05, isPdf ? "Lecture du PDF…" : "Lecture de l'image…");
@@ -684,10 +771,11 @@ PNG.ocr = (function () {
       if (onProgress) onProgress(0.15, "Analyse du texte du PDF…");
       const texteNatif = await pdfExtractText(file);
       if (texteNatifFiable(texteNatif)) {
-        const champs = parseFacture(texteNatif, null, 0, 0);
+        let champs = parseFacture(texteNatif, null, 0, 0);
         champs.moteur = "PDF texte (exact)";
+        champs = await affinerIA(champs, onProgress);
         if (onProgress) onProgress(1, "Terminé");
-        return { apercu: apercu, apercus: apercus, champs: champs, moteur: "PDF texte (exact)" };
+        return { apercu: apercu, apercus: apercus, champs: champs, moteur: champs.moteur };
       }
       // sinon : texte cassé -> on continue vers OCR.space (image)
     }
@@ -716,10 +804,11 @@ PNG.ocr = (function () {
         }
         const texte = await ocrspaceText(file, onProgress, img);
         if (texte && texte.trim().length > 0) {
-          const champs = parseFacture(texte, null, 0, 0);
+          let champs = parseFacture(texte, null, 0, 0);
           champs.moteur = "OCR.space";
+          champs = await affinerIA(champs, onProgress);
           if (onProgress) onProgress(1, "Terminé");
-          return { apercu: apercu, apercus: apercus, champs: champs, moteur: "OCR.space" };
+          return { apercu: apercu, apercus: apercus, champs: champs, moteur: champs.moteur };
         }
       } catch (e) {
         if (onProgress) onProgress(0.3, "OCR.space indisponible, secours local…");
@@ -731,10 +820,11 @@ PNG.ocr = (function () {
     const procURL = await preprocess(apercu);
     if (onProgress) onProgress(0.4, "Océrisation locale…");
     const data = await imageToData(procURL, (p) => onProgress && onProgress(0.4 + p * 0.55, "Océrisation locale… " + Math.round(p * 100) + "%"));
-    const champs = parseFacture(data.texte, data.mots, data.largeur, data.hauteur);
+    let champs = parseFacture(data.texte, data.mots, data.largeur, data.hauteur);
     champs.moteur = "Local (Tesseract)";
+    champs = await affinerIA(champs, onProgress);
     if (onProgress) onProgress(1, "Terminé");
-    return { apercu: apercu, apercus: apercus, champs: champs, moteur: "Local (Tesseract)" };
+    return { apercu: apercu, apercus: apercus, champs: champs, moteur: champs.moteur };
   }
 
   /* OCR d'une ZONE de l'aperçu. imgEl = <img>, rect = {x,y,w,h} en pixels
@@ -762,5 +852,5 @@ PNG.ocr = (function () {
     return txt;
   }
 
-  return { dispo, analyser, parseFacture, pdfToImage, imageToText, ocrZone, getConfig, setConfig, pdfExtractText };
+  return { dispo, analyser, parseFacture, pdfToImage, imageToText, ocrZone, getConfig, setConfig, pdfExtractText, geminiStructurer };
 })();
