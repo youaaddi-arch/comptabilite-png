@@ -66,17 +66,47 @@ PNG.ocr = (function () {
       for (let p = 1; p <= nb; p++) {
         const page = await pdf.getPage(p);
         const tc = await page.getTextContent();
-        // reconstruit les lignes en regroupant par position verticale
-        const lignes = {};
-        tc.items.forEach((it) => {
-          if (!it.str) return;
-          const y = Math.round(it.transform[5]);
-          (lignes[y] = lignes[y] || []).push({ x: it.transform[4], s: it.str });
+        // items avec position (x), base verticale (y), largeur et hauteur
+        const items = tc.items.filter((it) => it.str != null).map((it) => ({
+          x: it.transform[4], y: it.transform[5],
+          w: it.width || 0, h: Math.abs(it.transform[3]) || 8,
+          s: it.str,
+        }));
+        if (!items.length) continue;
+        // tolérance verticale = moitié de la hauteur de police médiane
+        const hs = items.map((i) => i.h).sort((a, b) => a - b);
+        const hMed = hs[Math.floor(hs.length / 2)] || 8;
+        const tol = Math.max(2, hMed * 0.6);
+        // regroupe en lignes
+        const lignes = [];
+        items.sort((a, b) => b.y - a.y || a.x - b.x);
+        items.forEach((it) => {
+          let l = lignes.find((g) => Math.abs(g.y - it.y) <= tol);
+          if (!l) { l = { y: it.y, items: [] }; lignes.push(l); }
+          l.items.push(it);
         });
-        Object.keys(lignes).map(Number).sort((a, b) => b - a).forEach((y) => {
-          const ligne = lignes[y].sort((a, b) => a.x - b.x).map((o) => o.s).join(" ");
-          out += ligne.replace(/\s{2,}/g, " ").trim() + "\n";
+        lignes.sort((a, b) => b.y - a.y);
+        lignes.forEach((l) => {
+          l.items.sort((a, b) => a.x - b.x);
+          let ligne = "";
+          let prev = null;
+          l.items.forEach((it) => {
+            if (prev) {
+              const gap = it.x - (prev.x + prev.w);
+              const espace = prev.h * 0.25; // seuil d'espace selon taille police
+              // gros écart = séparateur (tabulation) ; petit écart = mot collé
+              if (gap > prev.h * 2) ligne += "   ";
+              else if (gap > espace) ligne += " ";
+            }
+            ligne += it.s;
+            prev = it;
+          });
+          // recolle les lettres isolées issues d'une police perso ("O S M A N I")
+          ligne = ligne.replace(/\b(?:[A-Za-zÀ-ÿ]\s){2,}[A-Za-zÀ-ÿ]\b/g, (m) => m.replace(/\s+/g, ""));
+          ligne = ligne.replace(/\s{4,}/g, "   ").replace(/[ \t]{2,}/g, " ").trim();
+          if (ligne) out += ligne + "\n";
         });
+        out += "\n";
       }
       return out.trim();
     } catch (e) { return ""; }

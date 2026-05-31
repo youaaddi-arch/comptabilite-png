@@ -391,7 +391,8 @@ PNG.store = (function () {
     log("Facture archivée (Drive)", `${fac.fournisseur} → ${fac.driveUrl}`);
     // Identification data.gouv en tâche de fond (ne bloque pas l'UI)
     if (!(opts && opts.noLookup)) {
-      enrichirSiren(fac.id).then((r) => {
+      // true = corriger le nom du fournisseur avec la raison sociale officielle
+      enrichirSiren(fac.id, true).then((r) => {
         if (r && r.found && typeof window !== "undefined" && window.PNG && window.PNG._render) window.PNG._render();
       }).catch(() => {});
     }
