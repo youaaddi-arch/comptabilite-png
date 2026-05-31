@@ -263,18 +263,29 @@ PNG.ocr = (function () {
     // mots/noms techniques à ignorer (polices, métadonnées PDF)
     const JUNK = /\b(arial|helvetica|times|calibri|montserrat|identity|adobe|ucs|tahoma|verdana|cid|truetype|type0|fontello|roboto)\b/i;
 
-    // ---- Société destinataire = une de NOS sociétés citée sur la facture ----
-    let societeHint = null;
+    // ---- Société destinataire = une de NOS sociétés (recherche par score) ----
+    const compact = upper.replace(/[ .]/g, "");
+    const upNoSp = upper.replace(/\s+/g, "");
+    let societeHint = null, bestScore = 0;
     (window.PNG && PNG.companies || []).forEach((c) => {
-      if (societeHint) return;
-      const noms = [c.raisonSociale, c.marque].filter(Boolean);
-      for (const nom of noms) {
-        if (nom && nom.length > 3 && upper.includes(nom.toUpperCase())) { societeHint = c.id; break; }
-      }
+      let sc = 0;
+      const ids = [c.siret].concat((c.etablissements || []).map((e) => e.siret)).filter(Boolean).map((x) => String(x).replace(/\D/g, ""));
+      if (c.siren) ids.push(String(c.siren).replace(/\D/g, ""));
+      ids.forEach((id) => { if (id && id.length >= 9 && compact.indexOf(id) >= 0) sc += 10; });
+      if (c.raisonSociale && c.raisonSociale.length > 3 && upper.indexOf(c.raisonSociale.toUpperCase()) >= 0) sc += 6;
+      const adrs = [c.siege].concat((c.etablissements || []).map((e) => e.adresse)).concat(c.campuses || []).filter(Boolean);
+      adrs.forEach((a) => {
+        const A = a.toUpperCase();
+        const cp = (A.match(/\b(\d{5})\b/) || [])[1];
+        const motRue = (A.match(/(?:RUE|AVENUE|AV|BD|BLD|BOULEVARD|IMPASSE|PLACE|CHEMIN|ROUTE|ALL[ÉE]E|QUAI)\s+(?:DE\s+|DU\s+|DES\s+|LA\s+|LE\s+)?([A-ZÀ-Ÿ]{4,})/) || [])[1];
+        if (cp && upper.indexOf(cp) >= 0) { sc += 2; if (motRue && upper.indexOf(motRue) >= 0) sc += 3; }
+      });
+      if (c.marque && c.marque.length > 4 && upNoSp.indexOf(c.marque.toUpperCase().replace(/\s+/g, "")) >= 0) sc += 2;
+      if (sc > bestScore) { bestScore = sc; societeHint = c.id; }
     });
+    if (bestScore < 4) societeHint = null; // évite les faux positifs (sinon à choisir)
 
     // ---- SIRET : sépare le nôtre (destinataire) du fournisseur ----
-    const compact = upper.replace(/[ .]/g, "");
     const sirets = (compact.match(/\d{14}/g) || []);
     const nos = nosSirets();
     let siretFournisseur = "", siretNous = "";
@@ -305,22 +316,24 @@ PNG.ocr = (function () {
       fournisseur = best ? reparerEspaces(best).replace(/[,;].*$/, "").slice(0, 60) : "";
     }
 
-    // ---- N° de facture ----
+    // ---- N° de facture : UNIQUEMENT après une mention explicite ----
     let numeroFacture = "";
     const VAL = "([A-Za-z0-9][A-Za-z0-9\\-\\/\\._ ]{1,})";
     const numPatterns = [
-      new RegExp("r[ée]f[ée]rence\\s*facture\\s*[:#]?\\s*" + VAL, "i"),
-      new RegExp("n[°o]\\s*(?:de\\s*)?facture\\s*[:#]?\\s*" + VAL, "i"),
+      new RegExp("r[ée]f[ée]rence\\s*(?:de\\s*)?facture\\s*[:#]?\\s*" + VAL, "i"),
       new RegExp("num[ée]ro\\s*(?:de\\s*)?facture\\s*[:#]?\\s*" + VAL, "i"),
-      new RegExp("facture\\s*(?:n[°o]|num[ée]ro)?\\s*[:#]?\\s*" + VAL, "i"),
-      new RegExp("invoice\\s*(?:n[°o]|number|#|:)?\\s*[:#]?\\s*" + VAL, "i"),
-      new RegExp("\\bn[°o]\\s*[:#]?\\s*([0-9][0-9\\-\\/\\. ]{2,})", "i"),
+      new RegExp("n[°ºo]\\s*(?:de\\s*)?facture\\s*[:#]?\\s*" + VAL, "i"),
+      new RegExp("facture\\s*n[°ºo]\\s*[:#]?\\s*" + VAL, "i"),
+      new RegExp("facture\\s*[:#]\\s*" + VAL, "i"),
+      new RegExp("invoice\\s*(?:n[°ºo]?|number|#)\\s*[:#]?\\s*" + VAL, "i"),
+      new RegExp("\\bn[°º]\\s*[:#]?\\s*([0-9][0-9\\-\\/\\. ]{1,})", "i"),
     ];
-    const stop = /^(date|tva|ttc|ht|du|le|la|de|et|siret|siren)$/i;
+    const stop = /^(date|tva|ttc|ht|du|le|la|de|et|siret|siren|euro|eur)$/i;
     for (const re of numPatterns) {
       const m = t.match(re);
       if (m && m[1]) {
         let val = m[1].replace(/\s+/g, "").replace(/[.\-\/]+$/, "");
+        val = val.replace(/^[nN][°ºo]?(?=\d)/, "");
         if (val && !stop.test(val) && /\d/.test(val) && val.length >= 2) { numeroFacture = val.slice(0, 24); break; }
       }
     }
