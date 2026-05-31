@@ -401,6 +401,7 @@ PNG.views = (function () {
                 <div><label class="block text-[11px] text-slate-400">TVA €</label><input id="edTVA" data-ocrfield="amount" data-id="${x.id}" inputmode="decimal" value="${x.montantTVA}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>
               </div>
               <div><label class="block text-[11px] text-slate-400">Montant TTC</label><input id="edTTC" data-ocrfield="amount" data-id="${x.id}" inputmode="decimal" value="${x.montantTTC}" class="w-full border border-amber-200 bg-amber-50 rounded-lg px-3 py-2 text-sm font-semibold" /></div>
+              ${(x.alerteMontants && x.alerteMontants.length) ? `<div class="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700">⚠︎ <strong>Écart détecté sur les montants :</strong><ul class="list-disc ml-4 mt-1">${x.alerteMontants.map((a)=>`<li>${e(a)}</li>`).join("")}</ul><p class="mt-1 text-red-500">Vérifiez HT / TVA / TTC avant de valider.</p></div>` : `<div class="text-[10px] text-emerald-600">✓ Montants cohérents (HT + TVA = TTC)</div>`}
               <button data-savefac="${x.id}" class="w-full bg-slate-700 hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-sm font-medium">💾 Enregistrer les modifications</button>
               <p class="text-[10px] text-slate-400">Astuce : si vous changez HT ou le taux, la TVA et le TTC se recalculent. Vous pouvez aussi forcer le TTC directement.</p>
             </div>` : `
