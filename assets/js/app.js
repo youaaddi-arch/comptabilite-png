@@ -246,7 +246,7 @@
 
   /* --------------------- Délégation d'événements ------------------- */
   document.addEventListener("click", (ev) => {
-    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#btnSaveOcr2,#btnTestGemini,#closeModal,#modalBack,#btnReset");
+    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-saisirstatut],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#btnSaveOcr2,#btnTestGemini,#closeModal,#modalBack,#btnReset");
     if (!t) return;
 
     if (t.id === "modalBack" && ev.target.id === "modalBack") return closeModal();
@@ -301,6 +301,16 @@
       if (!mode) { toast("Choisissez un mode de paiement", "#dc2626"); return; }
       S.saisirPaiement(id, mode, date);
       toast("Paiement enregistré — à vérifier en banque", "#2563eb");
+      openModal(id); render(); return;
+    }
+    if (t.dataset.saisirstatut) {
+      const id = t.dataset.saisirstatut;
+      const statut = (document.getElementById("selStatutPaie") || {}).value || "a_payer";
+      const mode = (document.getElementById("selMode") || {}).value || "";
+      const date = (document.getElementById("selDatePaie") || {}).value || undefined;
+      S.definirStatutPaiement(id, statut, mode, date);
+      const lbl = { a_payer: "À payer", paye_attente: "Payé · à vérifier", paye_verifie: "Payé · vérifié" }[statut];
+      toast("Statut : " + lbl + " ✓", "#059669");
       openModal(id); render(); return;
     }
     if (t.dataset.verifbanque) {
@@ -432,6 +442,11 @@
   document.addEventListener("change", (ev) => {
     const el = ev.target;
     if (el.id === "selCpt") { S.setFactureCompte(el.dataset.id, el.value); toast("Compte modifié"); }
+    if (el.id === "selStatutPaie") {
+      // active/désactive visuellement le mode+date selon le statut choisi
+      const d = document.getElementById("paieDetails");
+      if (d) d.classList.toggle("opacity-50", el.value === "a_payer");
+    }
     if (el.name === "mobPaie") {
       const d = document.getElementById("mobPaieDetails");
       if (d) d.classList.toggle("hidden", el.value !== "paye");

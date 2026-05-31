@@ -519,6 +519,28 @@ PNG.store = (function () {
     return saisirPaiement(id, "virement", U.todayISO());
   }
 
+  /* Définit directement le statut de paiement choisi dans le menu déroulant :
+   * "a_payer" | "paye_attente" | "paye_verifie" (+ mode + date). */
+  function definirStatutPaiement(id, statut, modePaiement, datePaiement) {
+    const f = state.factures.find((x) => x.id === id);
+    if (!f) return;
+    if (statut === "a_payer") {
+      f.statutPaiement = "a_payer"; f.paye = false; f.modePaiement = null; f.datePaiement = null;
+      // si une transaction bancaire était rapprochée, on la délie
+      state.transactions.forEach((t) => { if (t.lienType === "facture" && t.lienId === id) { t.rapproche = false; t.lienType = null; t.lienId = null; } });
+      f.rapproche = false; f.dateReglement = null; f.dateDecaissement = null;
+    } else {
+      f.modePaiement = modePaiement || f.modePaiement || "virement";
+      f.datePaiement = datePaiement || f.datePaiement || U.todayISO();
+      f.dateReglement = f.datePaiement;
+      f.paye = true;
+      f.statutPaiement = (statut === "paye_verifie") ? "paye_verifie" : "paye_attente";
+      if (statut === "paye_verifie") { f.dateDecaissement = f.dateDecaissement || f.datePaiement; }
+    }
+    log("Statut paiement modifié", `${f.fournisseur} → ${f.statutPaiement}`);
+    save();
+  }
+
   /* VÉRIFICATION BANCAIRE du paiement :
    * cherche une écriture bancaire (débit) qui correspond au montant TTC de la
    * facture, sur la même société. Si trouvée, vérifie aussi le MODE de paiement
@@ -759,7 +781,7 @@ PNG.store = (function () {
     setFactureSociete, setFactureCompte, validerBrouillon, comptabiliser, supprimerFacture,
     scanNouvelleFacture, deposerMobile, creerDepuisOCR,
     recevoirEmail, traiterEmail, traiterTousEmails, detecterDoublon,
-    saisirPaiement, marquerPaye, verifierPaiementBanque, verifierTousPaiements,
+    saisirPaiement, definirStatutPaiement, marquerPaye, verifierPaiementBanque, verifierTousPaiements,
     enrichirSiren, appliquerEntreprise, fournisseurExiste, ajouterFournisseur, fournisseurDossiers, rebuildFournisseurs,
     suggestionsPour, rapprocher, annulerRapprochement, rapprochementAuto, synchroniserBanque,
     tresorerie, tresorerieTotale, flux, facturesAValider, tauxRapprochement, tva,

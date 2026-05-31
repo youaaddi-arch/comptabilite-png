@@ -42,37 +42,32 @@ PNG.views = (function () {
   }
   // Bloc paiement : à payer -> saisie mode+date ; payé -> vérification banque
   function paiementBlock(x) {
-    const sp = U.STATUT_PAIEMENT[x.statutPaiement] || U.STATUT_PAIEMENT.a_payer;
-    if (x.statutPaiement === "paye_verifie") {
-      const mp = U.modePaiementByCode(x.modePaiement);
-      const reglePar = x.regleParSocieteId ? (U.companyById(x.regleParSocieteId) || {}) : null;
-      return `<div class="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-sm text-emerald-800">
-        ✓ <strong>Payé et rapproché en banque</strong><br>
-        <span class="text-xs">${mp ? mp.icon + " " + mp.libelle : "mode ?"}</span>
-        <div class="grid grid-cols-2 gap-1 mt-2 text-xs text-slate-600">
-          <span>Date règlement : <strong>${U.fmtDate(x.dateReglement || x.datePaiement)}</strong></span>
-          <span>Date décaissement : <strong>${U.fmtDate(x.dateDecaissement)}</strong></span>
+    const reglePar = x.regleParSocieteId ? (U.companyById(x.regleParSocieteId) || {}) : null;
+    const st = x.statutPaiement || "a_payer";
+    const statutOpt = [
+      ["a_payer", "🟠 À payer"],
+      ["paye_attente", "🔵 Payé — à vérifier"],
+      ["paye_verifie", "🟢 Payé · vérifié / rapproché"],
+    ].map(([v, lbl]) => `<option value="${v}" ${v === st ? "selected" : ""}>${lbl}</option>`).join("");
+    const besoinMode = (st === "paye_attente" || st === "paye_verifie");
+    return `
+      <div class="space-y-2">
+        <div>
+          <label class="block text-[11px] text-slate-400">Statut du paiement</label>
+          <select id="selStatutPaie" data-id="${x.id}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm">${statutOpt}</select>
         </div>
-        ${reglePar ? `<div class="mt-2 text-xs bg-violet-100 text-violet-700 rounded px-2 py-1">↔ Réglé par une autre société du groupe : <strong>${e(reglePar.raisonSociale)}</strong></div>` : ""}
+        <div id="paieDetails" class="grid grid-cols-2 gap-2 ${besoinMode ? "" : "opacity-50"}">
+          <div><label class="block text-[11px] text-slate-400">Mode</label>
+            <select id="selMode" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm">${modePaiementOptions(x.modePaiement)}</select></div>
+          <div><label class="block text-[11px] text-slate-400">Date paiement</label>
+            <input id="selDatePaie" type="date" value="${e(x.datePaiement || U.todayISO())}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>
+        </div>
+        <button data-saisirstatut="${x.id}" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">€ Enregistrer le statut de paiement</button>
+        ${st === "paye_attente" ? `<button data-verifbanque="${x.id}" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-medium">🏦 Vérifier en banque &amp; rapprocher</button>
+          <p class="text-[10px] text-slate-400">Si le règlement n'est pas sur la banque de cette société, recherche dans les autres sociétés du groupe.</p>` : ""}
+        ${st === "paye_verifie" ? `<div class="bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 text-xs text-emerald-800">✓ Payé et rapproché. ${reglePar ? "↔ Réglé par <strong>" + e(reglePar.raisonSociale) + "</strong>. " : ""}Décaissement : ${U.fmtDate(x.dateDecaissement || x.datePaiement)}</div>` : ""}
+        <p class="text-[10px] text-slate-400">Échéance : ${U.fmtDate(x.echeance)}</p>
       </div>`;
-    }
-    if (x.statutPaiement === "paye_attente") {
-      const mp = U.modePaiementByCode(x.modePaiement);
-      return `<div class="bg-blue-50 border border-blue-100 rounded-xl p-3 mb-2 text-sm">
-          <p class="text-blue-800">${badge("Payé — à vérifier en banque", "bg-blue-100 text-blue-700")}</p>
-          <p class="text-xs text-slate-500 mt-1">Saisi : ${mp ? mp.icon + " " + mp.libelle : "mode ?"} · le ${U.fmtDate(x.datePaiement)}</p>
-        </div>
-        <button data-verifbanque="${x.id}" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">🏦 Vérifier le paiement en banque &amp; rapprocher</button>
-        <p class="text-[10px] text-slate-400 mt-1">Si le règlement n'est pas trouvé sur la banque de cette société, le logiciel cherche aussi dans les <strong>autres sociétés du groupe</strong>.</p>
-        <button data-paye="${x.id}" data-val="0" class="w-full mt-2 bg-white text-slate-500 border border-slate-200 px-4 py-2 rounded-xl text-xs">Annuler le paiement</button>`;
-    }
-    // à payer : saisie
-    return `<div class="mb-2">${badge(sp.label, sp.cls)} <span class="text-xs text-slate-400">échéance ${U.fmtDate(x.echeance)}</span></div>
-      <div class="flex gap-2 mb-2">
-        <select id="selMode" class="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm">${modePaiementOptions(x.modePaiement)}</select>
-        <input id="selDatePaie" type="date" value="${e(x.datePaiement || U.todayISO())}" class="border border-slate-200 rounded-lg px-3 py-2 text-sm" />
-      </div>
-      <button data-saisirpaie="${x.id}" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">€ Enregistrer le paiement</button>`;
   }
 
   /* ============================ DASHBOARD ========================== */
