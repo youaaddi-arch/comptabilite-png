@@ -458,6 +458,24 @@ PNG.ocr = (function () {
     // garde-fou : si le nom retenu est juste un libellé, on le vide
     if (/^([ée]metteur|fournisseur|vendeur|client|destinataire|facture|de|[àa])$/i.test((fournisseur || "").trim())) fournisseur = "";
 
+    // ---- Adresse du fournisseur (pour départager les homonymes via data.gouv) ----
+    // 1re adresse (n° rue ... + code postal + ville) qui n'est PAS celle d'une de
+    // nos sociétés (destinataire). On cherche dans le tiers haut du texte.
+    let adresseFournisseur = "";
+    const blocHaut = upper.indexOf("CLIENT") > 0 ? upper.slice(0, upper.indexOf("CLIENT")) : upper;
+    const adrRe = /(\d{1,4}[ ,]+(?:RUE|AV|AVENUE|BD|BLD|BOULEVARD|IMPASSE|PLACE|CHEMIN|SENTIER|ROUTE|ALL[ÉE]E|QUAI|COURS)[^\n]{0,40}?\b\d{5}\b[ ]*[A-ZÀ-Ÿ' -]{2,30})/;
+    // teste chaque ligne de l'en-tête (hors nos sociétés)
+    for (const l of lignes) {
+      if (estNotreSociete(l)) continue;
+      const m = l.toUpperCase().match(adrRe) || (l + " " + (lignes[lignes.indexOf(l) + 1] || "")).toUpperCase().match(adrRe);
+      if (m) { adresseFournisseur = m[1].replace(/\s{2,}/g, " ").trim(); break; }
+    }
+    // fallback : 1er bloc "code postal + ville" non-nôtre
+    if (!adresseFournisseur) {
+      const cps = blocHaut.match(/\b\d{5}\b[ ]+[A-ZÀ-Ÿ' -]{3,30}/g) || [];
+      for (const cv of cps) { if (!estNotreSociete(cv)) { adresseFournisseur = cv.trim(); break; } }
+    }
+
     // ---- N° de facture : UNIQUEMENT après une mention explicite ----
     let numeroFacture = "";
     const VAL = "([A-Za-z0-9][A-Za-z0-9\\-\\/\\._ ]{1,})";
@@ -534,6 +552,7 @@ PNG.ocr = (function () {
       siren: sirenFournisseur,
       siretDestinataire: siretNous,
       societeHint: societeHint,
+      adresseFournisseur: adresseFournisseur,
       dateFacture: dates[0] || null,
       montantHT: ht, montantTVA: tva, montantTTC: ttc, tauxTva: taux,
       alerteMontants: alertes.length ? alertes : null,

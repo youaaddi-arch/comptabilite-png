@@ -428,6 +428,7 @@ PNG.store = (function () {
       paye: false, statutPaiement: "a_payer", modePaiement: null, datePaiement: null,
       fournisseurSiren: champs.siren || "", fournisseurSiret: champs.siret || "",
       fournisseurNaf: "", fournisseurAdresse: "", fournisseurSource: champs.siret ? "OCR (facture)" : "",
+      adresseFournisseur: champs.adresseFournisseur || "",
       ocrConfiance: 0.9, rapproche: false, ocrIndices: ["OCR réel"],
       apercu: opts.apercu || null, apercus: opts.apercus || (opts.apercu ? [opts.apercu] : null), ocrTexte: champs.texteBrut || "", ocrMoteur: champs.moteur || "",
       alerteMontants: champs.alerteMontants || null,
