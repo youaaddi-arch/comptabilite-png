@@ -370,7 +370,7 @@ PNG.store = (function () {
       fournisseurSiren: champs.siren || "", fournisseurSiret: champs.siret || "",
       fournisseurNaf: "", fournisseurAdresse: "", fournisseurSource: champs.siret ? "OCR (facture)" : "",
       ocrConfiance: 0.9, rapproche: false, ocrIndices: ["OCR réel"],
-      apercu: opts.apercu || null, ocrTexte: champs.texteBrut || "",
+      apercu: opts.apercu || null, ocrTexte: champs.texteBrut || "", ocrMoteur: champs.moteur || "",
     };
     fac.driveUrl = PNG.drive.path(fac.societeId, fac.fournisseur, fac.fichier);
     fac.doublonDe = (detecterDoublon(fac) || {}).id || null;

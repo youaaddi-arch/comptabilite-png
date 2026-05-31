@@ -218,7 +218,16 @@
       setTimeout(() => openModal(f.id), 150);
     } catch (err) {
       ocrOverlayClose();
-      toast("Échec de l'océrisation : " + (err && err.message ? err.message : "erreur"), "#dc2626");
+      // On crée quand même la facture pour montrer l'aperçu + le diagnostic
+      try {
+        let apercu = null;
+        try { apercu = await PNG.ocr.pdfExtractText ? null : null; } catch (e) {}
+        const f = S.creerDepuisOCR({ fournisseur: "", texteBrut: "ERREUR OCR : " + (err && err.message ? err.message : err), moteur: "échec" }, { source: "upload", fichier: file.name });
+        toast("OCR en échec : ouvrez la fiche → Diagnostic OCR", "#dc2626");
+        render(); setTimeout(() => openModal(f.id), 150);
+      } catch (e2) {
+        toast("Échec : " + (err && err.message ? err.message : "erreur"), "#dc2626");
+      }
     }
   }
 

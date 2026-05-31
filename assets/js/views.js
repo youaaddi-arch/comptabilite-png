@@ -373,7 +373,11 @@ PNG.views = (function () {
                 <tr class="font-bold border-t border-slate-200"><td class="py-1">Total TTC</td><td class="text-right">${U.fmtEUR(x.montantTTC)}</td></tr>
               </tbody></table>
             </div>`}
-            <p class="text-xs text-slate-400 mt-3">Confiance OCR globale : ${confBadge(x.ocrConfiance)}${(x.ocrIndices && x.ocrIndices.length) ? ` · ${e(x.ocrIndices.join(", "))}` : ""}</p>
+            <p class="text-xs text-slate-400 mt-3">Moteur OCR : <strong>${e(x.ocrMoteur||"?")}</strong> · Confiance ${confBadge(x.ocrConfiance)}</p>
+            <details class="mt-2 text-xs">
+              <summary class="cursor-pointer text-blue-600">🔎 Diagnostic OCR (texte brut extrait)</summary>
+              <textarea readonly class="w-full mt-1 h-40 border border-slate-200 rounded-lg p-2 font-mono text-[10px]">${e(x.ocrTexte||"(aucun texte extrait — le PDF est peut-être une image scannée, ou la lecture a échoué)")}</textarea>
+            </details>
           </div>
           <!-- Champs extraits + écriture -->
           <div class="p-6">
