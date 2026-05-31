@@ -937,7 +937,7 @@ PNG.views = (function () {
         '<span><span class="font-medium text-slate-800">' + label + '</span><br><span class="text-xs text-slate-500">' + desc + '</span></span></label>';
     };
     return '' +
-      '<div class="mb-6"><h1 class="text-2xl font-bold text-slate-800">Réglages OCR</h1>' +
+      '<div class="mb-6"><h1 class="text-2xl font-bold text-slate-800">Réglages OCR <span class="text-xs font-normal text-emerald-600">' + (PNG.VERSION || "") + '</span></h1>' +
       '<p class="text-slate-500 text-sm">Choisissez le moteur de reconnaissance des factures. Vos clés restent sur votre navigateur.</p></div>' +
       '<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 max-w-2xl">' +
         '<div class="bg-emerald-50 border-2 border-emerald-300 rounded-xl p-4 mb-5">' +
