@@ -126,6 +126,25 @@ PNG.ocr = (function () {
     return canvas.toDataURL("image/png");
   }
 
+  // Rend chaque page en image séparée -> tableau de dataURL (pour l'aperçu navigable).
+  async function pdfToImagesArray(file, maxPages) {
+    setupPdf();
+    if (!window.pdfjsLib) return [];
+    const buf = await file.arrayBuffer();
+    const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+    const nb = Math.min(pdf.numPages, maxPages || 8);
+    const imgs = [];
+    for (let p = 1; p <= nb; p++) {
+      const page = await pdf.getPage(p);
+      const vp = page.getViewport({ scale: 2.2 });
+      const cv = document.createElement("canvas");
+      cv.width = vp.width; cv.height = vp.height;
+      await page.render({ canvasContext: cv.getContext("2d"), viewport: vp }).promise;
+      imgs.push(cv.toDataURL("image/png"));
+    }
+    return imgs;
+  }
+
   // Rend TOUTES les pages empilées verticalement -> 1 image (pour OCR multi-pages).
   async function pdfToImagesStacked(file, maxPages) {
     setupPdf();
@@ -287,6 +306,8 @@ PNG.ocr = (function () {
   // Nettoie un nom de société : coupe avant l'adresse / le SIRET / la virgule
   function nettoyerNomFournisseur(l) {
     var v = reparerEspaces(l || "");
+    // retire un libellé en tête ("Émetteur :", "Fournisseur :", "De :"…)
+    v = v.replace(/^\s*(?:[ée]metteur|fournisseur|vendeur|raison\s*sociale|soci[ée]t[ée]|de|exp[ée]diteur)\s*[:#-]\s*/i, "");
     v = v.split(/\s+\d{1,4}\s+(?:rue|av|avenue|bld|boulevard|chemin|sentier|impasse|place|route|all[ée]e|quai)\b/i)[0];
     v = v.split(/\b(?:SIRET|SIREN|APE|RCS|TVA|IBAN|BIC|RIB|T[ée]l|www|http|capital)\b/i)[0];
     v = v.split(/,/)[0];
@@ -406,14 +427,25 @@ PNG.ocr = (function () {
       const prouve = (fid && compact.indexOf(fid) >= 0) || fSirets.some((s) => compact.indexOf(s) >= 0);
       if (prouve) fournisseur = societeFournisseur.raisonSociale;
     }
+    // 1bis) valeur explicite après "Émetteur / Fournisseur / Vendeur / De :"
+    if (!fournisseur) {
+      const mEm = t.match(/(?:[ée]metteur|fournisseur|vendeur|raison\s*sociale|soci[ée]t[ée])\s*[:#]?\s*([^\n]{2,60})/i)
+               || t.match(/\bde\s*[:#]\s*([A-Za-zÀ-ÿ][^\n]{2,60})/i);
+      if (mEm && mEm[1] && !/^(facture|client|date|tva)/i.test(mEm[1].trim())) {
+        fournisseur = nettoyerNomFournisseur(mEm[1]);
+      }
+    }
     // 2) sinon, position (bbox) ou 1re ligne d'en-tête plausible
     if (!fournisseur) fournisseur = fournisseurParPosition(mots, W, H);
     if (!fournisseur) {
       const nomDest = societeHint ? (U_companyName(societeHint) || "") : "";
+      // mots qui sont des LIBELLÉS (à ne jamais prendre comme nom)
+      const LABEL = /^(\s*)?([ée]metteur|fournisseur|vendeur|destinataire|client|factur[ée]\s*[àa]|adress[ée]\s*[àa]|exp[ée]diteur|de|[àa]|objet|d[ée]signation|r[ée]f[ée]rence|coordonn[ée]es)\s*[:#]?\s*$/i;
       const candidate = lignes.filter((l) => {
         if (JUNK.test(l)) return false;
+        if (LABEL.test(l)) return false;                                  // libellé seul -> ignoré
         if (nomDest && l.toUpperCase().indexOf(nomDest.toUpperCase()) >= 0) return false; // pas le destinataire
-        if (/facture|invoice|devis|^date|^n[°o]\b|siret|siren|tva|iban|bic|rib|t[ée]l|@|www|http|^code|page|\bque?\b|client|factur[ée]\s*[àa]/i.test(l)) return false;
+        if (/facture|invoice|devis|^date|^n[°o]\b|siret|siren|tva|iban|bic|rib|t[ée]l|@|www|http|^code|page|\bque?\b|client|factur[ée]\s*[àa]|^[ée]metteur|^destinataire/i.test(l)) return false;
         if (/\bcapital\b|\brcs\b|\bnaf\b|\bape\b|au capital|r\.c\.s|p[ée]nalit|escompte|condition|r[èe]glement|\bd[ée]lai\b|si[èe]ge|tva intra|identifiant/i.test(l)) return false;
         if (/^\d/.test(l)) return false;
         if (/^[\d\s.,€%\/-]+$/.test(l)) return false;
@@ -423,6 +455,8 @@ PNG.ocr = (function () {
       const best = candidate[0];
       fournisseur = best ? nettoyerNomFournisseur(best) : "";
     }
+    // garde-fou : si le nom retenu est juste un libellé, on le vide
+    if (/^([ée]metteur|fournisseur|vendeur|client|destinataire|facture|de|[àa])$/i.test((fournisseur || "").trim())) fournisseur = "";
 
     // ---- N° de facture : UNIQUEMENT après une mention explicite ----
     let numeroFacture = "";
@@ -638,6 +672,9 @@ PNG.ocr = (function () {
     if (onProgress) onProgress(0.05, isPdf ? "Lecture du PDF…" : "Lecture de l'image…");
     // aperçu affichable (image) — pour PDF on rend la 1re page
     const apercu = isPdf ? await pdfToImage(file) : await fileToDataURL(file);
+    let apercus = null;
+    if (isPdf) { try { apercus = await pdfToImagesArray(file, 8); } catch (e) { apercus = null; } }
+    if (!apercus || !apercus.length) apercus = [apercu];
     const cfg = getConfig();
     const engine = cfg.engine || "ocrspace";
 
@@ -650,7 +687,7 @@ PNG.ocr = (function () {
         const champs = parseFacture(texteNatif, null, 0, 0);
         champs.moteur = "PDF texte (exact)";
         if (onProgress) onProgress(1, "Terminé");
-        return { apercu: apercu, champs: champs, moteur: "PDF texte (exact)" };
+        return { apercu: apercu, apercus: apercus, champs: champs, moteur: "PDF texte (exact)" };
       }
       // sinon : texte cassé -> on continue vers OCR.space (image)
     }
@@ -660,7 +697,7 @@ PNG.ocr = (function () {
       try {
         const champs = await mindeeAnalyse(file, onProgress);
         if (onProgress) onProgress(1, "Terminé");
-        return { apercu: apercu, champs: champs, moteur: "Mindee" };
+        return { apercu: apercu, apercus: apercus, champs: champs, moteur: "Mindee" };
       } catch (e) {
         if (onProgress) onProgress(0.3, "Mindee indisponible, secours OCR.space…");
         // bascule vers OCR.space
@@ -682,7 +719,7 @@ PNG.ocr = (function () {
           const champs = parseFacture(texte, null, 0, 0);
           champs.moteur = "OCR.space";
           if (onProgress) onProgress(1, "Terminé");
-          return { apercu: apercu, champs: champs, moteur: "OCR.space" };
+          return { apercu: apercu, apercus: apercus, champs: champs, moteur: "OCR.space" };
         }
       } catch (e) {
         if (onProgress) onProgress(0.3, "OCR.space indisponible, secours local…");
@@ -697,7 +734,7 @@ PNG.ocr = (function () {
     const champs = parseFacture(data.texte, data.mots, data.largeur, data.hauteur);
     champs.moteur = "Local (Tesseract)";
     if (onProgress) onProgress(1, "Terminé");
-    return { apercu: apercu, champs: champs, moteur: "Local (Tesseract)" };
+    return { apercu: apercu, apercus: apercus, champs: champs, moteur: "Local (Tesseract)" };
   }
 
   /* OCR d'une ZONE de l'aperçu. imgEl = <img>, rect = {x,y,w,h} en pixels

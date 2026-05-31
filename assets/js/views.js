@@ -358,8 +358,13 @@ PNG.views = (function () {
               ? `${editable ? `<div class="mb-2 flex items-center gap-2 text-xs">
                     <span id="zoneHint" class="px-2 py-1 rounded-lg bg-blue-50 text-blue-700">①&nbsp;Cliquez un champ à droite, ② puis dessinez la zone sur la facture pour l'océriser.</span>
                   </div>` : ""}
+                ${(x.apercus && x.apercus.length > 1) ? `<div class="flex items-center justify-between mb-2 bg-white border border-slate-200 rounded-lg px-3 py-1.5">
+                    <button data-pageprev="${x.id}" class="text-slate-500 hover:text-blue-600 text-sm font-medium">‹ Page précédente</button>
+                    <span class="text-xs text-slate-500">Page <span id="ocrPageNum">1</span> / ${x.apercus.length}</span>
+                    <button data-pagenext="${x.id}" class="text-slate-500 hover:text-blue-600 text-sm font-medium">Page suivante ›</button>
+                  </div>` : ""}
                 <div id="ocrZoneWrap" class="relative inline-block w-full ${editable ? "cursor-crosshair" : ""}" data-id="${x.id}">
-                  <img id="ocrZoneImg" src="${x.apercu}" alt="Aperçu de la facture" class="w-full rounded-lg border border-slate-200 shadow-sm select-none" draggable="false" />
+                  <img id="ocrZoneImg" src="${x.apercu}" alt="Aperçu de la facture" data-pages='${(x.apercus && x.apercus.length>1) ? "multi" : "single"}' class="w-full rounded-lg border border-slate-200 shadow-sm select-none" draggable="false" />
                 </div>`
               : `<div class="bg-white border border-slate-200 rounded-lg p-5 shadow-sm text-sm">
               <div class="flex justify-between items-start mb-4">

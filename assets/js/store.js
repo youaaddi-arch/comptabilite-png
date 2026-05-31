@@ -406,7 +406,7 @@ PNG.store = (function () {
       fournisseurSiren: champs.siren || "", fournisseurSiret: champs.siret || "",
       fournisseurNaf: "", fournisseurAdresse: "", fournisseurSource: champs.siret ? "OCR (facture)" : "",
       ocrConfiance: 0.9, rapproche: false, ocrIndices: ["OCR réel"],
-      apercu: opts.apercu || null, ocrTexte: champs.texteBrut || "", ocrMoteur: champs.moteur || "",
+      apercu: opts.apercu || null, apercus: opts.apercus || (opts.apercu ? [opts.apercu] : null), ocrTexte: champs.texteBrut || "", ocrMoteur: champs.moteur || "",
       alerteMontants: champs.alerteMontants || null,
     };
     fac.driveUrl = PNG.drive.path(fac.societeId, fac.fournisseur, fac.fichier);

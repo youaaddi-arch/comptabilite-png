@@ -77,11 +77,13 @@
 
   /* --------------------------- Modale ------------------------------ */
   let ocrActiveField = null; // {id, mode} champ ciblé pour l'OCR de zone
+  let ocrPage = 0;           // page d'aperçu courante (factures multi-pages)
   function openModal(id) {
     const wrap = document.getElementById("modal");
     wrap.innerHTML = V.factureModal(id);
     wrap.classList.remove("hidden");
     ocrActiveField = null;
+    ocrPage = 0;
     setupZoneOCR();
   }
 
@@ -209,7 +211,7 @@
       const scope = S.getScope();
       const f = S.creerDepuisOCR(champs, {
         societeId: scope || undefined, source: "upload",
-        fichier: file.name, apercu,
+        fichier: file.name, apercu, apercus: res.apercus,
       });
       const c = PNG.utils.companyById(f.societeId);
       toast(`OCR (${champs.moteur||"?"}) : ${f.fournisseur || "?"} → ${c ? c.code : "?"}`, "#059669");
@@ -244,7 +246,7 @@
 
   /* --------------------- Délégation d'événements ------------------- */
   document.addEventListener("click", (ev) => {
-    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#closeModal,#modalBack,#btnReset");
+    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#closeModal,#modalBack,#btnReset");
     if (!t) return;
 
     if (t.id === "modalBack" && ev.target.id === "modalBack") return closeModal();
@@ -260,6 +262,20 @@
     if (t.dataset.suppfac) {
       if (confirm("Supprimer définitivement cette facture et son écriture comptable ?")) {
         S.supprimerFacture(t.dataset.suppfac); closeModal(); toast("Facture supprimée 🗑", "#dc2626"); render();
+      }
+      return;
+    }
+    if (t.dataset.pageprev || t.dataset.pagenext) {
+      const id = t.dataset.pageprev || t.dataset.pagenext;
+      const f = S.get().factures.find((x) => x.id === id);
+      if (f && f.apercus && f.apercus.length > 1) {
+        ocrPage = (ocrPage || 0) + (t.dataset.pagenext ? 1 : -1);
+        if (ocrPage < 0) ocrPage = f.apercus.length - 1;
+        if (ocrPage >= f.apercus.length) ocrPage = 0;
+        const img = document.getElementById("ocrZoneImg");
+        const num = document.getElementById("ocrPageNum");
+        if (img) img.src = f.apercus[ocrPage];
+        if (num) num.textContent = ocrPage + 1;
       }
       return;
     }
