@@ -335,7 +335,12 @@ PNG.views = (function () {
     if (!x) return "";
     const c = U.companyById(x.societeId);
     const optionsSoc = PNG.companies.map((co) => `<option value="${co.id}" ${co.id === x.societeId ? "selected" : ""}>${e(co.raisonSociale)}</option>`).join("");
-    const optionsCpt = PNG.planComptable.filter((p) => p.type === "Charge").map((p) => `<option value="${p.num}" ${p.num === x.compteCharge ? "selected" : ""}>${p.num} — ${e(p.libelle)}</option>`).join("");
+    // liste complète du plan comptable (charges en premier), + le compte courant s'il est hors liste
+    const comptesTries = PNG.planComptable.slice().sort((a, b) => (a.type === "Charge" ? 0 : 1) - (b.type === "Charge" ? 0 : 1) || a.num.localeCompare(b.num));
+    let optionsCpt = comptesTries.map((p) => `<option value="${p.num}" ${p.num === x.compteCharge ? "selected" : ""}>${p.num} — ${e(p.libelle)}${p.type !== "Charge" ? " (" + p.type + ")" : ""}</option>`).join("");
+    if (x.compteCharge && !PNG.planComptable.some((p) => p.num === x.compteCharge)) {
+      optionsCpt = `<option value="${e(x.compteCharge)}" selected>${e(x.compteCharge)} — (compte saisi)</option>` + optionsCpt;
+    }
     const st = U.STATUT_FACTURE[x.statut];
     const editable = x.statut !== "comptabilise"; // tout modifiable tant que pas comptabilisé
     const champ = (lbl, val, conf) => `<div class="flex items-center justify-between py-1.5 border-b border-slate-100"><span class="text-xs text-slate-400">${lbl}</span><span class="text-sm font-medium text-slate-700">${val} ${conf != null ? confBadge(conf) : ""}</span></div>`;
@@ -451,8 +456,13 @@ PNG.views = (function () {
             })()}
             <a href="${e(x.driveUrl||"#")}" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:underline mb-2">📁 Voir dans le Drive <span class="text-slate-300">(archivage auto)</span></a>
 
-            <h3 class="text-xs font-semibold text-slate-400 uppercase mb-2 mt-3">Compte comptable</h3>
-            <select id="selCpt" data-id="${x.id}" ${editable ? "" : "disabled"} class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4">${optionsCpt}</select>
+            <h3 class="text-xs font-semibold text-slate-400 uppercase mb-2 mt-3">Catégorie & compte comptable ${x.compteParIA ? `<span class="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full">🧠 proposé par l'IA</span>` : ""}</h3>
+            ${editable ? `<label class="block text-[11px] text-slate-400">Catégorie (modifiable)</label>
+            <input id="edCat2" data-id="${x.id}" value="${e(x.categorie||"")}" placeholder="ex: Télécom, Loyer, Publicité…" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-2" />` : ""}
+            <label class="block text-[11px] text-slate-400">Compte du plan comptable (choisir dans la liste)</label>
+            <select id="selCpt" data-id="${x.id}" ${editable ? "" : "disabled"} class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-2">${optionsCpt}</select>
+            ${editable ? `<label class="block text-[11px] text-slate-400">…ou saisir un autre n° de compte à la main</label>
+            <input id="edCompteManuel" data-id="${x.id}" placeholder="ex: 606300" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4" />` : `<div class="mb-4"></div>`}
 
             <h3 class="text-xs font-semibold text-slate-400 uppercase mb-2">Écriture comptable (brouillon)</h3>
             <table class="w-full text-sm mb-4">

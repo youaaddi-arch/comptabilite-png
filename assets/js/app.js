@@ -282,10 +282,14 @@
     if (t.dataset.savefac) {
       const id = t.dataset.savefac;
       const v = (i) => { const el = document.getElementById(i); return el ? el.value : null; };
+      // compte : la saisie manuelle prime, sinon la liste déroulante
+      const compteManuel = (v("edCompteManuel") || "").trim();
+      const compte = compteManuel || v("selCpt");
       S.editFacture(id, {
         fournisseur: v("edFournisseur"), societeId: v("edSoc"), numeroFacture: v("edNum"),
-        categorie: v("edCat"), dateFacture: v("edDate"), echeance: v("edEch"),
+        categorie: v("edCat2") != null ? v("edCat2") : v("edCat"), dateFacture: v("edDate"), echeance: v("edEch"),
         montantHT: v("edHT"), tauxTva: v("edTaux"), montantTVA: v("edTVA"), montantTTC: v("edTTC"),
+        compteCharge: compte,
       });
       toast("Modifications enregistrées ✓", "#0f172a");
       openModal(id); render(); return;

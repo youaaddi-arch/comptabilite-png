@@ -570,17 +570,24 @@ PNG.ocr = (function () {
     var nos = (window.PNG && PNG.companies || []).map(function (c) {
       return { id: c.id, nom: c.raisonSociale, siren: c.siren || "", siret: c.siret || "" };
     });
+    // plan comptable (comptes de charge) fourni à l'IA pour qu'elle choisisse
+    var comptes = (window.PNG && PNG.planComptable || [])
+      .filter(function (p) { return p.type === "Charge"; })
+      .map(function (p) { return { compte: p.num, libelle: p.libelle }; });
 
     var prompt =
-      "Tu es un expert comptable. Voici le TEXTE BRUT d'une facture fournisseur (océrisé).\n" +
+      "Tu es un expert-comptable français. Voici le TEXTE BRUT d'une facture fournisseur (océrisé).\n" +
       "Extrais les informations et renvoie UNIQUEMENT un JSON valide, sans texte autour, au format :\n" +
-      '{"fournisseur":"","fournisseurSiren":"","fournisseurSiret":"","numeroFacture":"","dateFacture":"AAAA-MM-JJ","montantHT":0,"montantTVA":0,"montantTTC":0,"tauxTva":0,"destinataireId":"","destinataireNom":""}\n\n' +
+      '{"fournisseur":"","fournisseurSiren":"","fournisseurSiret":"","numeroFacture":"","dateFacture":"AAAA-MM-JJ","montantHT":0,"montantTVA":0,"montantTTC":0,"tauxTva":0,"destinataireId":"","destinataireNom":"","categorie":"","compteCharge":""}\n\n' +
       "RÈGLES :\n" +
       "- 'fournisseur' = celui qui ÉMET la facture (en-tête / pied de page), JAMAIS un libellé comme 'Émetteur'.\n" +
       "- 'destinataire' = le CLIENT facturé. Compare-le à NOS SOCIÉTÉS ci-dessous : si c'est l'une d'elles, mets son id dans 'destinataireId'.\n" +
-      "- Une de nos sociétés PEUT être le fournisseur d'une autre : ne te base pas sur 'c'est une de nos sociétés' pour décider qui est fournisseur, base-toi sur la POSITION (émetteur vs client).\n" +
+      "- Une de nos sociétés PEUT être le fournisseur d'une autre : base-toi sur la POSITION (émetteur vs client), pas sur 'c'est une de nos sociétés'.\n" +
       "- Montants en nombres (point décimal). Si 'TVA non applicable' (art. 293B), montantTVA=0 et tauxTva=0.\n" +
+      "- 'categorie' = type de dépense en 1-3 mots selon le CONTENU/désignation de la facture (ex: 'Télécom', 'Loyer', 'Publicité', 'Honoraires', 'Fournitures', 'Logiciel/SaaS', 'Formation', 'Énergie', 'Assurance', 'Entretien', 'Transport').\n" +
+      "- 'compteCharge' = le NUMÉRO DE COMPTE le plus adapté, choisi STRICTEMENT dans le PLAN COMPTABLE ci-dessous (renvoie uniquement le numéro, ex '626100'). Si rien ne correspond, mets '606800'.\n" +
       "- Si une info est absente, mets \"\" ou 0. Ne devine pas un SIREN.\n\n" +
+      "PLAN COMPTABLE (comptes de charge autorisés) : " + JSON.stringify(comptes) + "\n\n" +
       "NOS SOCIÉTÉS : " + JSON.stringify(nos) + "\n\n" +
       "TEXTE BRUT DE LA FACTURE :\n" + texteBrut.slice(0, 8000);
 
@@ -643,6 +650,13 @@ PNG.ocr = (function () {
     if (num(j.montantTTC) != null) champs.montantTTC = num(j.montantTTC);
     if (num(j.tauxTva) != null) champs.tauxTva = num(j.tauxTva);
     if (j.destinataireId) champs.societeHint = j.destinataireId;
+    if (j.categorie) champs.categorie = String(j.categorie).trim();
+    // compte de charge proposé par l'IA, validé contre le plan comptable
+    if (j.compteCharge) {
+      var cc = String(j.compteCharge).replace(/\D/g, "");
+      var existe = (window.PNG && PNG.planComptable || []).some(function (p) { return p.num === cc; });
+      if (cc && existe) { champs.compteCharge = cc; champs.compteParIA = true; }
+    }
     champs.moteur = (champs.moteur || "OCR") + " + IA Gemini";
     return champs;
   }
