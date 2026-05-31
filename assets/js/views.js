@@ -340,11 +340,20 @@ PNG.views = (function () {
     const editable = x.statut !== "comptabilise"; // tout modifiable tant que pas comptabilisé
     const champ = (lbl, val, conf) => `<div class="flex items-center justify-between py-1.5 border-b border-slate-100"><span class="text-xs text-slate-400">${lbl}</span><span class="text-sm font-medium text-slate-700">${val} ${conf != null ? confBadge(conf) : ""}</span></div>`;
 
+    // File de validation = factures "à saisir" (dans le périmètre société courant)
+    const file = S.get().factures.filter(S.inScope).filter((f) => f.statut === "ocr" || f.statut === "a_valider");
+    const posFile = file.findIndex((f) => f.id === x.id);
+    const totalFile = file.length;
+
     return `
     <div class="fixed inset-0 bg-slate-900/50 z-40 flex items-center justify-center p-4" id="modalBack">
       <div class="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[92vh] overflow-y-auto">
         <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 sticky top-0 bg-white">
-          <div><h2 class="font-bold text-slate-800">${e(x.fournisseur)} · ${e(x.numeroFacture)}</h2><p class="text-xs text-slate-400">${e(x.fichier)} · ${x.source === "email" ? `reçu par email (${e(x.sourceEmail||"")})` : x.source === "scan" ? "scan" : "dépôt manuel"}</p></div>
+          <div class="flex items-center gap-2">
+            <button data-navfac="prev" data-id="${x.id}" class="text-slate-400 hover:text-blue-600 text-xl px-1" title="Facture précédente (←)">‹</button>
+            <div><h2 class="font-bold text-slate-800">${e(x.fournisseur)} · ${e(x.numeroFacture)}</h2><p class="text-xs text-slate-400">${e(x.fichier)} · ${x.source === "email" ? `reçu par email (${e(x.sourceEmail||"")})` : x.source === "scan" ? "scan" : "dépôt manuel"}${posFile >= 0 && totalFile > 1 ? ` · à saisir ${posFile + 1}/${totalFile}` : ""}</p></div>
+            <button data-navfac="next" data-id="${x.id}" class="text-slate-400 hover:text-blue-600 text-xl px-1" title="Facture suivante (→)">›</button>
+          </div>
           <div class="flex items-center gap-3">
             <button data-suppfac="${x.id}" class="text-red-500 hover:text-red-700 text-sm font-medium flex items-center gap-1" title="Supprimer la facture et son écriture">🗑 Supprimer</button>
             <button id="closeModal" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>

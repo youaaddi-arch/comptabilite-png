@@ -87,6 +87,27 @@
     setupZoneOCR();
   }
 
+  // File de validation : factures "à saisir" dans le périmètre société courant
+  function fileASaisir() {
+    return S.get().factures.filter(S.inScope).filter((f) => f.statut === "ocr" || f.statut === "a_valider");
+  }
+  // Navigue depuis une facture vers la précédente/suivante (toutes factures)
+  function naviguerFacture(id, dir) {
+    const all = S.get().factures.filter(S.inScope);
+    const i = all.findIndex((f) => f.id === id);
+    if (i < 0) return;
+    let j = i + (dir === "next" ? 1 : -1);
+    if (j < 0) j = all.length - 1;
+    if (j >= all.length) j = 0;
+    openModal(all[j].id);
+  }
+  // Ouvre la prochaine facture "à saisir" (après validation), sinon ferme
+  function ouvrirSuivanteASaisir(currentId) {
+    const file = fileASaisir().filter((f) => f.id !== currentId);
+    if (file.length) { openModal(file[0].id); toast("Facture suivante à saisir →", "#2563eb"); }
+    else { closeModal(); toast("🎉 Toutes les factures à saisir sont traitées !", "#059669"); }
+  }
+
   /* Sélection d'une zone sur l'aperçu pour océriser dans le champ ciblé */
   function setupZoneOCR() {
     const wrap = document.getElementById("ocrZoneWrap");
@@ -246,7 +267,7 @@
 
   /* --------------------- Délégation d'événements ------------------- */
   document.addEventListener("click", (ev) => {
-    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-saisirstatut],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#btnSaveOcr2,#btnTestGemini,#closeModal,#modalBack,#btnReset");
+    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-navfac],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-saisirstatut],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#btnSaveOcr2,#btnTestGemini,#closeModal,#modalBack,#btnReset");
     if (!t) return;
 
     if (t.id === "modalBack" && ev.target.id === "modalBack") return closeModal();
@@ -256,8 +277,9 @@
     if (t.dataset.finfilter != null) { location.hash = `#financements/${t.dataset.finfilter}`; return; }
     if (t.dataset.open) { openModal(t.dataset.open); return; }
 
-    if (t.dataset.valider) { S.validerBrouillon(t.dataset.valider); toast("Facture validée en brouillon ✓", "#2563eb"); closeModal(); render(); return; }
-    if (t.dataset.compta) { S.comptabiliser(t.dataset.compta); toast("Écriture comptabilisée ✓", "#059669"); closeModal(); render(); return; }
+    if (t.dataset.navfac) { naviguerFacture(t.dataset.id, t.dataset.navfac); return; }
+    if (t.dataset.valider) { const id = t.dataset.valider; S.validerBrouillon(id); toast("Facture validée ✓", "#2563eb"); render(); ouvrirSuivanteASaisir(id); return; }
+    if (t.dataset.compta) { const id = t.dataset.compta; S.comptabiliser(id); toast("Écriture comptabilisée ✓", "#059669"); render(); ouvrirSuivanteASaisir(id); return; }
     if (t.dataset.paye) { S.marquerPaye(t.dataset.paye, t.dataset.val === "1"); toast(t.dataset.val === "1" ? "Facture marquée payée ✓" : "Paiement annulé", "#059669"); openModal(t.dataset.paye); render(); return; }
     if (t.dataset.suppfac) {
       if (confirm("Supprimer définitivement cette facture et son écriture comptable ?")) {
@@ -468,7 +490,16 @@
 
   window.addEventListener("hashchange", render);
   // Échap ferme la modale
-  document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") closeModal(); });
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") return closeModal();
+    // flèches ← → pour naviguer entre factures (si la fiche est ouverte et qu'on ne tape pas dans un champ)
+    const modalOuvert = !document.getElementById("modal").classList.contains("hidden");
+    const tag = (ev.target && ev.target.tagName) || "";
+    if (modalOuvert && (ev.key === "ArrowLeft" || ev.key === "ArrowRight") && tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") {
+      const nav = document.querySelector('[data-navfac="' + (ev.key === "ArrowRight" ? "next" : "prev") + '"]');
+      if (nav) { ev.preventDefault(); naviguerFacture(nav.dataset.id, ev.key === "ArrowRight" ? "next" : "prev"); }
+    }
+  });
 
   /* ------------------------------ Init ----------------------------- */
   // Démarrage protégé : si d'anciennes données cassent le rendu, on
