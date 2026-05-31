@@ -593,22 +593,31 @@ PNG.ocr = (function () {
       generationConfig: { temperature: 0, responseMimeType: "application/json" },
     });
     var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
-    var dernierStatut = 0, data = null;
+    var dernierStatut = 0, data = null, detail = "", modelKO = "";
 
     for (var mi = 0; mi < modeles.length && !data; mi++) {
       var url = "https://generativelanguage.googleapis.com/v1beta/models/" + modeles[mi] + ":generateContent?key=" + encodeURIComponent(cfg.geminiKey);
-      // jusqu'à 3 tentatives par modèle si 429 (quota par minute)
-      for (var att = 0; att < 3; att++) {
+      for (var att = 0; att < 2; att++) {
         var resp = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: body });
         if (resp.ok) { data = await resp.json(); break; }
-        dernierStatut = resp.status;
-        if (resp.status === 429) { if (onProgress) onProgress(0.92, "IA occupée, nouvel essai…"); await sleep(2500 * (att + 1)); continue; }
-        if (resp.status === 404) break;        // modèle inexistant -> on passe au suivant
-        if (resp.status === 400 || resp.status === 403) throw new Error("Gemini HTTP " + resp.status + " (clé invalide ou API non activée)");
-        break;                                  // autre erreur -> modèle suivant
+        dernierStatut = resp.status; modelKO = modeles[mi];
+        // lit le message détaillé de Google
+        try { var ej = await resp.json(); detail = (ej && ej.error && ej.error.message) ? ej.error.message : ""; } catch (e) { detail = ""; }
+        if (resp.status === 429) {
+          // si la quota est journalière (PerDay), inutile de réessayer ce modèle -> suivant
+          if (/per day|PerDay|daily/i.test(detail)) break;
+          if (onProgress) onProgress(0.92, "IA occupée, nouvel essai…");
+          await sleep(3000 * (att + 1)); continue;
+        }
+        if (resp.status === 404) break;
+        if (resp.status === 400 || resp.status === 403) throw new Error("Gemini HTTP " + resp.status + " : " + (detail || "clé invalide ou API non activée"));
+        break;
       }
     }
-    if (!data) throw new Error("Gemini HTTP " + dernierStatut + (dernierStatut === 429 ? " (quota gratuit atteint — réessayez dans 1 min)" : ""));
+    if (!data) {
+      var court = detail ? detail.split(". ")[0].slice(0, 180) : "";
+      throw new Error("Gemini HTTP " + dernierStatut + (modelKO ? " [" + modelKO + "]" : "") + (court ? " — " + court : ""));
+    }
 
     var txt = data && data.candidates && data.candidates[0] && data.candidates[0].content
       && data.candidates[0].content.parts && data.candidates[0].content.parts[0].text;
