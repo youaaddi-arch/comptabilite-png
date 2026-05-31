@@ -150,6 +150,31 @@ PNG.store = (function () {
     return fo;
   }
 
+  // Le fournisseur existe-t-il déjà dans notre base ? (par SIREN sinon par nom)
+  function fournisseurExiste(facture) {
+    ensureShape();
+    if (!facture) return false;
+    const siren = (facture.fournisseurSiren || "").replace(/\s/g, "");
+    const nom = (facture.fournisseur || "").trim().toUpperCase();
+    return state.fournisseurs.some((fo) => {
+      if (siren && fo.siren && fo.siren.replace(/\s/g, "") === siren) return true;
+      // même nom ET même société (le compte tiers est par société)
+      return fo.nom && fo.nom.trim().toUpperCase() === nom && fo.societeId === facture.societeId;
+    });
+  }
+
+  // Ajoute explicitement le fournisseur de la facture à la base (fiche)
+  function ajouterFournisseur(factureId) {
+    ensureShape();
+    const f = state.factures.find((x) => x.id === factureId);
+    if (!f) return null;
+    const fo = upsertFournisseur(f);
+    f.fournisseurAjoute = true;
+    log("Fournisseur ajouté à la base", `${f.fournisseur}${f.fournisseurSiren ? " (SIREN " + f.fournisseurSiren + ")" : ""}`);
+    save();
+    return fo;
+  }
+
   function log(action, detail) {
     ensureShape();
     state.activity.unshift({ ts: Date.now(), date: U.todayISO(), action, detail });
@@ -187,6 +212,11 @@ PNG.store = (function () {
     if (champs.echeance != null) f.echeance = champs.echeance;
     if (champs.compteCharge != null) f.compteCharge = champs.compteCharge;
     if (champs.categorie != null) f.categorie = champs.categorie;
+    // identité fournisseur (modifiable manuellement)
+    if (champs.fournisseurSiren != null) f.fournisseurSiren = String(champs.fournisseurSiren).replace(/\s/g, "");
+    if (champs.fournisseurSiret != null) f.fournisseurSiret = String(champs.fournisseurSiret).replace(/\s/g, "");
+    if (champs.fournisseurNaf != null) f.fournisseurNaf = champs.fournisseurNaf;
+    if (champs.fournisseurAdresse != null) f.fournisseurAdresse = champs.fournisseurAdresse;
     // montants
     let recalc = false;
     if (champs.montantHT != null) { const v = num(champs.montantHT); if (v != null) { f.montantHT = v; recalc = true; } }
@@ -219,6 +249,7 @@ PNG.store = (function () {
     const f = state.factures.find((x) => x.id === id);
     if (!f) return;
     f.statut = "comptabilise";
+    upsertFournisseur(f); // garantit la fiche fournisseur à la comptabilisation
     state.journal.push({
       id: "ECR-" + f.id, date: U.todayISO(), piece: f.numeroFacture,
       societeId: f.societeId,
@@ -300,7 +331,18 @@ PNG.store = (function () {
   function creerDepuisOCR(champs, opts) {
     opts = opts || {};
     champs = champs || {};
-    const soc = opts.societeId || (PNG.companies.find((c) => SOLDES_INIT[c.id]) || {}).id;
+    // société destinataire : si l'OCR a trouvé NOTRE SIRET, on l'utilise
+    let soc = opts.societeId;
+    if (!soc && champs.siretDestinataire) {
+      const found = PNG.companies.find((c) => {
+        const s = champs.siretDestinataire;
+        if (c.siret && c.siret.replace(/\D/g, "") === s) return true;
+        if (c.siren && c.siren === s.slice(0, 9)) return true;
+        return (c.etablissements || []).some((e) => e.siret && e.siret.replace(/\D/g, "") === s);
+      });
+      if (found) soc = found.id;
+    }
+    if (!soc) soc = (PNG.companies.find((c) => SOLDES_INIT[c.id]) || {}).id;
     const fournisseur = (champs.fournisseur || "Fournisseur à préciser").trim();
     const fref = U.fournisseurByNom(fournisseur) || {};
     const ht = champs.montantHT != null ? champs.montantHT : 0;
@@ -342,7 +384,9 @@ PNG.store = (function () {
   /* Après création d'une facture : crée la fiche/dossier fournisseur,
    * archive (lien Drive) et tente l'identification SIREN via data.gouv. */
   function postCreationFacture(fac, opts) {
-    upsertFournisseur(fac);
+    // On NE crée PAS automatiquement la fiche fournisseur ici : l'utilisateur
+    // l'ajoute explicitement (bouton « Ajouter le fournisseur ») après
+    // vérification data.gouv, ou elle est créée à la comptabilisation.
     log("Facture archivée (Drive)", `${fac.fournisseur} → ${fac.driveUrl}`);
     // Identification data.gouv en tâche de fond (ne bloque pas l'UI)
     if (!(opts && opts.noLookup)) {
@@ -676,7 +720,7 @@ PNG.store = (function () {
     scanNouvelleFacture, deposerMobile, creerDepuisOCR,
     recevoirEmail, traiterEmail, traiterTousEmails, detecterDoublon,
     saisirPaiement, marquerPaye, verifierPaiementBanque, verifierTousPaiements,
-    enrichirSiren, appliquerEntreprise, fournisseurDossiers, rebuildFournisseurs,
+    enrichirSiren, appliquerEntreprise, fournisseurExiste, ajouterFournisseur, fournisseurDossiers, rebuildFournisseurs,
     suggestionsPour, rapprocher, annulerRapprochement, rapprochementAuto, synchroniserBanque,
     tresorerie, tresorerieTotale, flux, facturesAValider, tauxRapprochement, tva,
     caParSociete, repartitionFinanceurs, serieFlux,

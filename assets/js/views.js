@@ -407,17 +407,34 @@ PNG.views = (function () {
             ${champ("TVA " + x.tauxTva + "%", U.fmtEUR(x.montantTVA), null)}
             ${champ("Montant TTC", U.fmtEUR(x.montantTTC), null)}`}
 
-            <h3 class="text-xs font-semibold text-slate-400 uppercase mb-2 mt-5">Identification fournisseur (data.gouv)</h3>
+            <h3 class="text-xs font-semibold text-slate-400 uppercase mb-2 mt-5">Identification fournisseur</h3>
+            ${editable ? `
+            <div class="space-y-2 mb-2">
+              <div class="grid grid-cols-2 gap-2">
+                <div><label class="block text-[11px] text-slate-400">SIREN</label><input id="edFSiren" data-id="${x.id}" value="${e(x.fournisseurSiren||"")}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono" /></div>
+                <div><label class="block text-[11px] text-slate-400">SIRET siège</label><input id="edFSiret" data-id="${x.id}" value="${e(x.fournisseurSiret||"")}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono" /></div>
+              </div>
+              <div><label class="block text-[11px] text-slate-400">Code NAF</label><input id="edFNaf" data-id="${x.id}" value="${e(x.fournisseurNaf||"")}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>
+              <div><label class="block text-[11px] text-slate-400">Adresse du siège</label><input id="edFAdr" data-id="${x.id}" value="${e(x.fournisseurAdresse||"")}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>
+              <div class="flex gap-2">
+                <button data-savefourn="${x.id}" class="flex-1 bg-slate-700 hover:bg-slate-800 text-white px-3 py-2 rounded-lg text-xs font-medium">💾 Enregistrer l'identité</button>
+                <button data-verifdg="${x.id}" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-xs font-medium">🇫🇷 Vérifier via data.gouv</button>
+              </div>
+              <p class="text-[10px] text-slate-400">La vérification data.gouv complète SIREN/SIRET/adresse et corrige la raison sociale (orthographe officielle) à partir du SIRET/SIREN.</p>
+            </div>` : `
             <div class="bg-slate-50 rounded-lg p-3 text-sm mb-2">
-              ${x.fournisseurSiren
-                ? `<div class="flex justify-between"><span class="text-slate-400 text-xs">SIREN</span><span class="font-mono">${e(x.fournisseurSiren)}</span></div>
-                   ${x.fournisseurSiret ? `<div class="flex justify-between"><span class="text-slate-400 text-xs">SIRET siège</span><span class="font-mono">${e(x.fournisseurSiret)}</span></div>` : ""}
-                   ${x.fournisseurNaf ? `<div class="flex justify-between"><span class="text-slate-400 text-xs">Code NAF</span><span>${e(x.fournisseurNaf)}</span></div>` : ""}
-                   ${x.fournisseurAdresse ? `<div class="mt-1"><span class="text-slate-400 text-xs">Adresse du siège</span><p class="text-xs text-slate-600">${e(x.fournisseurAdresse)}</p></div>` : ""}
-                   <p class="text-[10px] text-slate-400 mt-1">Source : ${e(x.fournisseurSource||"data.gouv")}</p>`
-                : `<div class="flex items-center justify-between gap-2"><span class="text-xs text-slate-500">Non identifié</span><div class="flex gap-1"><button data-siren="${x.id}" class="text-xs bg-blue-600 text-white px-2.5 py-1.5 rounded-lg">🔎 Auto</button><button data-newfourn="${x.id}" class="text-xs bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg">＋ Nouveau fournisseur</button></div></div>`}
-            </div>
-            ${x.fournisseurSiren ? `<button data-newfourn="${x.id}" class="text-xs text-blue-600 hover:underline mb-2">↻ Corriger / rechercher un autre fournisseur</button>` : ""}
+              ${x.fournisseurSiren ? `<div class="flex justify-between"><span class="text-slate-400 text-xs">SIREN</span><span class="font-mono">${e(x.fournisseurSiren)}</span></div>` : ""}
+              ${x.fournisseurSiret ? `<div class="flex justify-between"><span class="text-slate-400 text-xs">SIRET siège</span><span class="font-mono">${e(x.fournisseurSiret)}</span></div>` : ""}
+              ${x.fournisseurAdresse ? `<div class="mt-1"><span class="text-slate-400 text-xs">Adresse du siège</span><p class="text-xs text-slate-600">${e(x.fournisseurAdresse)}</p></div>` : ""}
+            </div>`}
+            ${(() => {
+              const existe = S.fournisseurExiste(x);
+              if (existe) return `<div class="bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 text-xs text-emerald-700 mb-2">✓ Ce fournisseur existe déjà dans votre base.</div>`;
+              return `<div class="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-2 flex items-center justify-between gap-2">
+                <span class="text-xs text-amber-700">Fournisseur inconnu de votre base.</span>
+                <button data-addfourn="${x.id}" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg font-medium whitespace-nowrap">＋ Ajouter le fournisseur</button>
+              </div>`;
+            })()}
             <a href="${e(x.driveUrl||"#")}" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:underline mb-2">📁 Voir dans le Drive <span class="text-slate-300">(archivage auto)</span></a>
 
             <h3 class="text-xs font-semibold text-slate-400 uppercase mb-2 mt-3">Compte comptable</h3>

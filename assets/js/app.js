@@ -235,7 +235,7 @@
 
   /* --------------------- Délégation d'événements ------------------- */
   document.addEventListener("click", (ev) => {
-    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-savefac],[data-saisirpaie],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#closeModal,#modalBack,#btnReset");
+    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-savefac],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#closeModal,#modalBack,#btnReset");
     if (!t) return;
 
     if (t.id === "modalBack" && ev.target.id === "modalBack") return closeModal();
@@ -285,6 +285,30 @@
       return;
     }
     if (t.dataset.newfourn) { openFournModal(t.dataset.newfourn); return; }
+    if (t.dataset.savefourn) {
+      const id = t.dataset.savefourn;
+      const v = (i) => { const el = document.getElementById(i); return el ? el.value : null; };
+      S.editFacture(id, { fournisseurSiren: v("edFSiren"), fournisseurSiret: v("edFSiret"), fournisseurNaf: v("edFNaf"), fournisseurAdresse: v("edFAdr") });
+      toast("Identité fournisseur enregistrée ✓", "#0f172a");
+      openModal(id); render(); return;
+    }
+    if (t.dataset.verifdg) {
+      const id = t.dataset.verifdg;
+      // enregistre d'abord ce qui est saisi (SIREN/SIRET) puis interroge data.gouv
+      const v = (i) => { const el = document.getElementById(i); return el ? el.value : null; };
+      S.editFacture(id, { fournisseurSiren: v("edFSiren"), fournisseurSiret: v("edFSiret") });
+      toast("Vérification data.gouv en cours…", "#2563eb");
+      S.enrichirSiren(id, true).then((r) => {
+        toast(r && r.found ? `✓ ${r.nom} (SIREN ${r.siren})` : `Non trouvé (${(r&&r.raison)||"?"})`, r && r.found ? "#059669" : "#64748b");
+        openModal(id); render();
+      });
+      return;
+    }
+    if (t.dataset.addfourn) {
+      S.ajouterFournisseur(t.dataset.addfourn);
+      toast("Fournisseur ajouté à la base ✓ — vous pouvez continuer la saisie", "#059669");
+      openModal(t.dataset.addfourn); render(); return;
+    }
     if (t.id === "btnFournSearch") { lancerRechercheFourn(t.dataset.id); return; }
     if (t.dataset.pickent) {
       try {
