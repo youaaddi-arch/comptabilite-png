@@ -358,18 +358,24 @@ PNG.ocr = (function () {
   }
 
   /* ---- OCR.space : renvoie du texte, puis parseFacture l'analyse -------- */
-  async function ocrspaceText(file, onProgress) {
+  async function ocrspaceText(file, onProgress, imageDataURL) {
     var cfg = getConfig();
     var key = cfg.ocrspaceKey || "helloworld"; // clé démo si aucune fournie
     if (onProgress) onProgress(0.2, "Envoi à OCR.space…");
-    // OCR.space limite la taille ; pour un PDF on envoie le PDF directement
     var fd = new FormData();
     fd.append("apikey", key);
     fd.append("language", "fre");
     fd.append("OCREngine", "2");
     fd.append("scale", "true");
     fd.append("isTable", "true");
-    fd.append("file", file);
+    // Pour un PDF on envoie l'IMAGE rendue (1re page) : OCR.space lit alors les
+    // pixels, ce qui contourne les couches texte cassées (polices perso).
+    if (imageDataURL) {
+      fd.append("base64Image", imageDataURL);
+      fd.append("filetype", "PNG");
+    } else {
+      fd.append("file", file);
+    }
     var resp = await fetch("https://api.ocr.space/parse/image", { method: "POST", body: fd });
     if (!resp.ok) throw new Error("OCR.space HTTP " + resp.status);
     var data = await resp.json();
@@ -435,6 +441,21 @@ PNG.ocr = (function () {
   }
 
   /* Pipeline complet : fichier -> aperçu + texte + champs extraits */
+  /* Le texte natif d'un PDF est-il PROPRE (vrais mots) ou cassé (police perso) ?
+   * On exige des mots-clés de facture ET une faible proportion de fragments
+   * d'1-2 lettres isolées (symptôme du texte éclaté "OSMAN I QEN DRIM"). */
+  function texteNatifFiable(t) {
+    if (!t) return false;
+    var clean = t.replace(/\s+/g, " ").trim();
+    if (clean.replace(/\s/g, "").length < 80) return false;
+    var hasKw = /(facture|total|tva|montant|ttc|\bht\b|client|date)/i.test(clean);
+    if (!hasKw) return false;
+    var mots = clean.split(/\s+/);
+    var courts = mots.filter(function (m) { return /^[A-Za-zÀ-ÿ]{1,2}$/.test(m); }).length;
+    var ratio = courts / Math.max(1, mots.length);
+    return ratio < 0.30; // moins de 30% de fragments isolés = texte propre
+  }
+
   async function analyser(file, onProgress) {
     const isPdf = /pdf$/i.test(file.type) || /\.pdf$/i.test(file.name);
     if (onProgress) onProgress(0.05, isPdf ? "Lecture du PDF…" : "Lecture de l'image…");
@@ -443,17 +464,18 @@ PNG.ocr = (function () {
     const cfg = getConfig();
     const engine = cfg.engine || "ocrspace";
 
-    // 0) PDF NUMÉRIQUE : on lit la couche texte native (exact, sans OCR).
-    if (isPdf) {
-      if (onProgress) onProgress(0.15, "Lecture du texte du PDF…");
+    // 0) PDF NUMÉRIQUE PROPRE uniquement : couche texte native (exact, sans OCR).
+    //    Si le texte est cassé (police perso), on passe à OCR.space (lit l'image).
+    if (isPdf && engine !== "mindee") {
+      if (onProgress) onProgress(0.15, "Analyse du texte du PDF…");
       const texteNatif = await pdfExtractText(file);
-      // un PDF numérique a généralement > 60 caractères de texte réel
-      if (texteNatif && texteNatif.replace(/\s/g, "").length > 60) {
+      if (texteNatifFiable(texteNatif)) {
         const champs = parseFacture(texteNatif, null, 0, 0);
         champs.moteur = "PDF texte (exact)";
         if (onProgress) onProgress(1, "Terminé");
         return { apercu: apercu, champs: champs, moteur: "PDF texte (exact)" };
       }
+      // sinon : texte cassé -> on continue vers OCR.space (image)
     }
 
     // 1) Mindee : extraction structurée directe
@@ -471,7 +493,7 @@ PNG.ocr = (function () {
     // 2) OCR.space : texte -> parseFacture
     if (engine === "ocrspace" || engine === "mindee") {
       try {
-        const texte = await ocrspaceText(file, onProgress);
+        const texte = await ocrspaceText(file, onProgress, isPdf ? apercu : null);
         if (texte && texte.trim().length > 0) {
           const champs = parseFacture(texte, null, 0, 0);
           champs.moteur = "OCR.space";
