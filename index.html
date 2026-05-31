@@ -16,6 +16,21 @@
   <link rel="stylesheet" href="assets/css/app.css" />
   <script>
     tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter','system-ui','sans-serif'] } } } };
+    // Afficheur d'erreur visible (évite la page blanche muette)
+    window.addEventListener("error", function (e) {
+      var box = document.getElementById("fatalError");
+      if (!box) {
+        box = document.createElement("div");
+        box.id = "fatalError";
+        box.style.cssText = "position:fixed;inset:0;z-index:99999;background:#fff;color:#b91c1c;font-family:monospace;padding:24px;overflow:auto;font-size:13px";
+        document.body && document.body.appendChild(box);
+      }
+      box.innerHTML = "<h2 style='color:#b91c1c'>⚠️ Erreur de chargement</h2>"
+        + "<p style='color:#334155'>Copiez ce message et envoyez-le :</p>"
+        + "<pre style='white-space:pre-wrap;background:#fef2f2;padding:12px;border-radius:8px'>"
+        + (e.message || e) + "\n\nFichier : " + (e.filename || "?") + "  ligne " + (e.lineno || "?")
+        + "</pre><p style='color:#64748b'>Astuce : Cmd+Shift+R pour recharger sans cache, ou tapez dans la console : <code>localStorage.clear()</code> puis rechargez.</p>";
+    });
   </script>
 </head>
 <body class="bg-slate-50 text-slate-800 antialiased">
