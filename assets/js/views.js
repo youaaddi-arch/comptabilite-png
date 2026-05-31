@@ -939,26 +939,28 @@ PNG.views = (function () {
       '<div class="mb-6"><h1 class="text-2xl font-bold text-slate-800">Réglages OCR</h1>' +
       '<p class="text-slate-500 text-sm">Choisissez le moteur de reconnaissance des factures. Vos clés restent sur votre navigateur.</p></div>' +
       '<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 max-w-2xl">' +
-        '<h3 class="text-xs font-semibold text-slate-400 uppercase mb-3">Moteur</h3>' +
+        '<div class="bg-emerald-50 border-2 border-emerald-300 rounded-xl p-4 mb-5">' +
+          '<p class="font-bold text-emerald-800 mb-1">🧠 IA Google Gemini — GRATUIT (recommandé)</p>' +
+          '<p class="text-xs text-emerald-700 mb-2">La vraie solution : une IA range automatiquement le texte dans les bonnes cases (fournisseur, destinataire, n°, HT/TVA/TTC), même sur des factures très différentes. Gratuit ~1500 factures/jour, sans carte bancaire.</p>' +
+          '<label class="flex items-center gap-2 text-sm cursor-pointer font-medium text-emerald-800 mb-2">' +
+            '<input type="checkbox" id="ocrUseGemini" ' + (cfg.useGemini ? "checked" : "") + '> Activer l\'IA Gemini' +
+          '</label>' +
+          '<label class="block text-[11px] text-emerald-700 mb-1">Clé API Gemini (gratuite sur aistudio.google.com/apikey)</label>' +
+          '<input id="ocrKeyGemini" value="' + e(cfg.geminiKey || "") + '" placeholder="colle ta clé Gemini ici" class="w-full border border-emerald-300 rounded-lg px-3 py-2 text-sm" />' +
+          '<button id="btnSaveOcr" class="mt-3 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium w-full">💾 Enregistrer</button>' +
+          (cfg.geminiKey ? '<p class="text-xs text-emerald-700 mt-2">✓ Clé enregistrée. L\'IA est ' + (cfg.useGemini ? "active" : "désactivée") + '.</p>' : '') +
+        '</div>' +
+        '<h3 class="text-xs font-semibold text-slate-400 uppercase mb-3">Moteur OCR (lecture du texte)</h3>' +
         opt("ocrspace", "OCR.space — gratuit, immédiat ✅", "Fonctionne tout de suite (clé démo). Pour plus de fiabilité, collez votre clé gratuite ci-dessous (25 000 pages/mois sur ocr.space).") +
         opt("mindee", "Mindee — qualité maximale factures ⭐", "Extraction structurée (fournisseur, SIRET, n°, HT/TVA/TTC) et distingue fournisseur/client. Gratuit jusqu'à 250 factures/mois. Nécessite une clé API.") +
         opt("tesseract", "Local (Tesseract) — hors-ligne", "Aucune connexion requise, mais qualité plus faible. À utiliser en dépannage.") +
-        '<div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 mb-4">' +
-          '<label class="flex items-start gap-2 text-sm cursor-pointer">' +
-            '<input type="checkbox" id="ocrUseGemini" ' + (cfg.useGemini ? "checked" : "") + ' class="mt-1">' +
-            '<span><span class="font-semibold text-emerald-800">🧠 IA Google Gemini — GRATUIT</span><br>' +
-            '<span class="text-xs text-emerald-700">Range automatiquement le texte dans les bonnes cases (fournisseur, destinataire, n°, HT/TVA/TTC). Bien plus fiable que les règles. ~1500 factures/jour gratuites, sans carte bancaire.</span></span>' +
-          '</label>' +
-          '<label class="block text-[11px] text-emerald-700 mb-1 mt-2">Clé API Gemini</label>' +
-          '<input id="ocrKeyGemini" value="' + e(cfg.geminiKey || "") + '" placeholder="colle ta clé Gemini ici" class="w-full border border-emerald-200 rounded-lg px-3 py-2 text-sm" />' +
-        '</div>' +
         '<h3 class="text-xs font-semibold text-slate-400 uppercase mb-2 mt-5">Clés OCR (lecture du texte)</h3>' +
         '<label class="block text-[11px] text-slate-400 mb-1">Clé OCR.space (laisser vide = clé démo)</label>' +
         '<input id="ocrKeySpace" value="' + e(cfg.ocrspaceKey || "") + '" placeholder="ex: K81234567888957" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-3" />' +
         '<label class="block text-[11px] text-slate-400 mb-1">Clé API Mindee (optionnel)</label>' +
         '<input id="ocrKeyMindee" value="' + e(cfg.mindeeKey || "") + '" placeholder="votre clé Mindee" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4" />' +
         '<div class="flex gap-2">' +
-          '<button id="btnSaveOcr" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">💾 Enregistrer</button>' +
+          '<button id="btnSaveOcr2" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">💾 Enregistrer les clés OCR</button>' +
         '</div>' +
         '<div class="mt-4 text-xs text-slate-500 bg-slate-50 rounded-lg p-3">' +
           '<p class="font-medium text-slate-600 mb-1">Comment obtenir une clé gratuite ?</p>' +

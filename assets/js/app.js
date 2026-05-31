@@ -246,7 +246,7 @@
 
   /* --------------------- Délégation d'événements ------------------- */
   document.addEventListener("click", (ev) => {
-    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#closeModal,#modalBack,#btnReset");
+    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#btnSaveOcr2,#closeModal,#modalBack,#btnReset");
     if (!t) return;
 
     if (t.id === "modalBack" && ev.target.id === "modalBack") return closeModal();
@@ -384,7 +384,7 @@
     if (t.id === "btnAutoRappro") { const n = S.rapprochementAuto(); toast(n ? `${n} écriture(s) rapprochée(s) automatiquement ✓` : "Aucun rapprochement automatique possible", n ? "#059669" : "#64748b"); render(); return; }
     if (t.id === "btnSyncBanque") { const n = S.synchroniserBanque(); toast(`🔄 ${n} écriture(s) bancaire(s) remontée(s)`, "#0f172a"); render(); return; }
 
-    if (t.id === "btnSaveOcr") {
+    if (t.id === "btnSaveOcr" || t.id === "btnSaveOcr2") {
       const engine = (document.querySelector('input[name="ocrEngine"]:checked') || {}).value || "ocrspace";
       const ks = (document.getElementById("ocrKeySpace") || {}).value || "";
       const km = (document.getElementById("ocrKeyMindee") || {}).value || "";
