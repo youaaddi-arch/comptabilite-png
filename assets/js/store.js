@@ -408,6 +408,7 @@ PNG.store = (function () {
       ocrConfiance: 0.9, rapproche: false, ocrIndices: ["OCR réel"],
       apercu: opts.apercu || null, apercus: opts.apercus || (opts.apercu ? [opts.apercu] : null), ocrTexte: champs.texteBrut || "", ocrMoteur: champs.moteur || "",
       alerteMontants: champs.alerteMontants || null,
+      geminiErreur: champs.geminiErreur || null,
     };
     fac.driveUrl = PNG.drive.path(fac.societeId, fac.fournisseur, fac.fichier);
     fac.doublonDe = (detecterDoublon(fac) || {}).id || null;

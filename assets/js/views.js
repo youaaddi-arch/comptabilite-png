@@ -381,7 +381,8 @@ PNG.views = (function () {
                 <tr class="font-bold border-t border-slate-200"><td class="py-1">Total TTC</td><td class="text-right">${U.fmtEUR(x.montantTTC)}</td></tr>
               </tbody></table>
             </div>`}
-            <p class="text-xs text-slate-400 mt-3">Moteur OCR : <strong>${e(x.ocrMoteur||"?")}</strong> · Confiance ${confBadge(x.ocrConfiance)}</p>
+            <p class="text-xs text-slate-400 mt-3">Moteur : <strong>${e(x.ocrMoteur||"?")}</strong> · Confiance ${confBadge(x.ocrConfiance)}</p>
+            ${x.geminiErreur ? `<div class="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700 mt-1">⚠︎ <strong>L'IA Gemini a échoué :</strong> ${e(x.geminiErreur)}<br>→ Vérifiez votre clé dans ⚙ Réglages OCR (bouton « Tester l'IA »).</div>` : ""}
             <details class="mt-2 text-xs">
               <summary class="cursor-pointer text-blue-600">🔎 Diagnostic OCR (texte brut extrait)</summary>
               <textarea readonly class="w-full mt-1 h-40 border border-slate-200 rounded-lg p-2 font-mono text-[10px]">${e(x.ocrTexte||"(aucun texte extrait — le PDF est peut-être une image scannée, ou la lecture a échoué)")}</textarea>
@@ -947,8 +948,12 @@ PNG.views = (function () {
           '</label>' +
           '<label class="block text-[11px] text-emerald-700 mb-1">Clé API Gemini (gratuite sur aistudio.google.com/apikey)</label>' +
           '<input id="ocrKeyGemini" value="' + e(cfg.geminiKey || "") + '" placeholder="colle ta clé Gemini ici" class="w-full border border-emerald-300 rounded-lg px-3 py-2 text-sm" />' +
-          '<button id="btnSaveOcr" class="mt-3 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium w-full">💾 Enregistrer</button>' +
-          (cfg.geminiKey ? '<p class="text-xs text-emerald-700 mt-2">✓ Clé enregistrée. L\'IA est ' + (cfg.useGemini ? "active" : "désactivée") + '.</p>' : '') +
+          '<div class="flex gap-2 mt-3">' +
+            '<button id="btnSaveOcr" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">💾 Enregistrer</button>' +
+            '<button id="btnTestGemini" class="flex-1 bg-white border border-emerald-300 text-emerald-700 px-4 py-2.5 rounded-xl text-sm font-medium">🧪 Tester l\'IA</button>' +
+          '</div>' +
+          '<div id="geminiTestResult" class="text-xs mt-2"></div>' +
+          (cfg.geminiKey ? '<p class="text-xs text-emerald-700 mt-2">✓ Clé enregistrée. L\'IA est ' + (cfg.useGemini ? "active" : "désactivée") + '. Cliquez « Tester l\'IA » pour vérifier.</p>' : '') +
         '</div>' +
         '<h3 class="text-xs font-semibold text-slate-400 uppercase mb-3">Moteur OCR (lecture du texte)</h3>' +
         opt("ocrspace", "OCR.space — gratuit, immédiat ✅", "Fonctionne tout de suite (clé démo). Pour plus de fiabilité, collez votre clé gratuite ci-dessous (25 000 pages/mois sur ocr.space).") +

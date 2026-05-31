@@ -749,9 +749,25 @@ PNG.ocr = (function () {
           }
           champs.alerteMontants = al.length ? al : null;
         }
-      } catch (e) { champs.moteur = (champs.moteur || "OCR") + " (IA indispo)"; }
+      } catch (e) {
+        champs.moteur = (champs.moteur || "OCR") + " (IA échec)";
+        champs.geminiErreur = (e && e.message) ? e.message : String(e);
+      }
     }
     return champs;
+  }
+
+  // Test direct de la clé Gemini (réglages) : renvoie {ok, message}
+  async function testerGemini() {
+    var cfg = getConfig();
+    if (!cfg.geminiKey) return { ok: false, message: "Aucune clé Gemini saisie." };
+    try {
+      var j = await geminiStructurer("FACTURE\nACME SARL\nN° 123\nTotal HT 100,00\nTVA 20% 20,00\nTotal TTC 120,00", null);
+      if (j && (j.fournisseur || j.montantTTC)) return { ok: true, message: "✓ IA OK — fournisseur lu : " + (j.fournisseur || "?") + ", TTC : " + (j.montantTTC || "?") };
+      return { ok: false, message: "Réponse vide de l'IA." };
+    } catch (e) {
+      return { ok: false, message: (e && e.message) ? e.message : String(e) };
+    }
   }
 
   async function analyser(file, onProgress) {
@@ -852,5 +868,5 @@ PNG.ocr = (function () {
     return txt;
   }
 
-  return { dispo, analyser, parseFacture, pdfToImage, imageToText, ocrZone, getConfig, setConfig, pdfExtractText, geminiStructurer };
+  return { dispo, analyser, parseFacture, pdfToImage, imageToText, ocrZone, getConfig, setConfig, pdfExtractText, geminiStructurer, testerGemini };
 })();

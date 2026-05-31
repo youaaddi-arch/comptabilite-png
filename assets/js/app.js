@@ -246,7 +246,7 @@
 
   /* --------------------- Délégation d'événements ------------------- */
   document.addEventListener("click", (ev) => {
-    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#btnSaveOcr2,#closeModal,#modalBack,#btnReset");
+    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#btnSaveOcr2,#btnTestGemini,#closeModal,#modalBack,#btnReset");
     if (!t) return;
 
     if (t.id === "modalBack" && ev.target.id === "modalBack") return closeModal();
@@ -384,6 +384,20 @@
     if (t.id === "btnAutoRappro") { const n = S.rapprochementAuto(); toast(n ? `${n} écriture(s) rapprochée(s) automatiquement ✓` : "Aucun rapprochement automatique possible", n ? "#059669" : "#64748b"); render(); return; }
     if (t.id === "btnSyncBanque") { const n = S.synchroniserBanque(); toast(`🔄 ${n} écriture(s) bancaire(s) remontée(s)`, "#0f172a"); render(); return; }
 
+    if (t.id === "btnTestGemini") {
+      // enregistre d'abord la clé saisie, puis teste
+      const kg = (document.getElementById("ocrKeyGemini") || {}).value || "";
+      if (PNG.ocr && PNG.ocr.setConfig) PNG.ocr.setConfig({ geminiKey: kg.trim(), useGemini: true });
+      const box = document.getElementById("geminiTestResult");
+      if (box) box.innerHTML = '<span class="text-slate-500">🧪 Test en cours…</span>';
+      PNG.ocr.testerGemini().then((r) => {
+        if (box) box.innerHTML = r.ok
+          ? '<span class="text-emerald-700">' + PNG.utils.escapeHtml(r.message) + '</span>'
+          : '<span class="text-red-600">❌ ' + PNG.utils.escapeHtml(r.message) + '</span>';
+        toast(r.ok ? "IA Gemini opérationnelle ✓" : "IA Gemini : échec", r.ok ? "#059669" : "#dc2626");
+      });
+      return;
+    }
     if (t.id === "btnSaveOcr" || t.id === "btnSaveOcr2") {
       const engine = (document.querySelector('input[name="ocrEngine"]:checked') || {}).value || "ocrspace";
       const ks = (document.getElementById("ocrKeySpace") || {}).value || "";
