@@ -343,6 +343,10 @@ PNG.store = (function () {
       });
       if (found) soc = found.id;
     }
+    // Si la société destinataire n'a pas été reconnue, on NE force PAS une
+    // valeur par défaut (évite "Deniz Finances" systématique) : on marque
+    // la facture à confirmer et on prend une société neutre temporaire.
+    let societeReconnue = !!soc;
     if (!soc) soc = (PNG.companies.find((c) => SOLDES_INIT[c.id]) || {}).id;
     const fournisseur = (champs.fournisseur || "Fournisseur à préciser").trim();
     const fref = U.fournisseurByNom(fournisseur) || {};
@@ -361,7 +365,7 @@ PNG.store = (function () {
       dateDepot: U.todayISO(), dateImport: U.todayISO(), statut: "a_valider",
       dateReglement: null, dateDecaissement: null, regleParSocieteId: null,
       fournisseur, categorie: fref.categorie || "Divers",
-      societeId: soc, societeConfiance: 1,
+      societeId: soc, societeConfiance: societeReconnue ? 1 : 0.3,
       numeroFacture: champs.numeroFacture || ("AUTO-" + (10000 + n)),
       dateFacture: champs.dateFacture || U.todayISO(),
       montantHT: ht, tauxTva: taux, montantTVA: tva, montantTTC: ttc,
