@@ -50,11 +50,14 @@ PNG.views = (function () {
       ["paye_verifie", "🟢 Payée"],
     ].map(([v, lbl]) => `<option value="${v}" ${v === st ? "selected" : ""}>${lbl}</option>`).join("");
     const besoinMode = (st === "paye_attente" || st === "paye_verifie");
+    // INCOHÉRENCE : un règlement est rapproché en banque alors que la facture est "À payer"
+    const incoherenceRappro = (x.rapproche && st === "a_payer");
     return `
       <div class="space-y-2">
+        ${incoherenceRappro ? `<div class="bg-red-50 border-2 border-red-300 rounded-lg px-3 py-2 text-sm text-red-700 font-medium">🔴 <strong>Incohérence :</strong> un règlement est <strong>rapproché en banque</strong> alors que le statut est « À payer ». Vérifiez : cette facture est probablement déjà <strong>Payée</strong>.</div>` : ""}
         <div>
-          <label class="block text-[11px] text-slate-400">Statut du paiement</label>
-          <select id="selStatutPaie" data-id="${x.id}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm">${statutOpt}</select>
+          <label class="block text-[11px] text-slate-400">Statut du paiement ${x.rapproche ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full ${incoherenceRappro ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}">↔ rapproché en banque</span>` : ""}</label>
+          <select id="selStatutPaie" data-id="${x.id}" class="w-full border ${incoherenceRappro ? "border-red-400" : "border-slate-200"} rounded-lg px-3 py-2 text-sm">${statutOpt}</select>
         </div>
         <div id="paieDetails" class="grid grid-cols-2 gap-2 ${besoinMode ? "" : "opacity-50"}">
           <div><label class="block text-[11px] text-slate-400">Mode</label>
@@ -734,7 +737,7 @@ PNG.views = (function () {
         <td class="py-2.5 text-right text-xs text-slate-500">${U.fmtEUR(x.montantTVA)}<br>${x.tauxTva}%</td>
         <td class="py-2.5 text-right text-sm font-medium">${U.fmtEUR(x.montantTTC)}</td>
         <td class="py-2.5 text-center"><span class="font-mono text-xs">${e(x.compteCharge)}</span></td>
-        <td class="py-2.5 text-center text-xs">${badge(sp.label, sp.cls)}</td>
+        <td class="py-2.5 text-center text-xs">${(x.rapproche && x.statutPaiement === "a_payer") ? badge("🔴 À payer / rapproché", "bg-red-100 text-red-700") : badge(sp.label, sp.cls)}${(x.rapproche && x.statutPaiement !== "a_payer") ? ` <span class="text-[9px] text-emerald-600" title="Rapproché en banque">↔</span>` : ""}</td>
         <td class="py-2.5 text-center">${x.driveUrl?`<a href="${e(x.driveUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" class="text-blue-600" title="Drive">📁</a>`:""}</td>
         <td class="py-2.5 text-center"><button data-suppfac="${x.id}" onclick="event.stopPropagation()" class="text-red-400 hover:text-red-600" title="Supprimer">🗑</button></td>
       </tr>`;
