@@ -345,7 +345,10 @@ PNG.views = (function () {
       <div class="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[92vh] overflow-y-auto">
         <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 sticky top-0 bg-white">
           <div><h2 class="font-bold text-slate-800">${e(x.fournisseur)} · ${e(x.numeroFacture)}</h2><p class="text-xs text-slate-400">${e(x.fichier)} · ${x.source === "email" ? `reçu par email (${e(x.sourceEmail||"")})` : x.source === "scan" ? "scan" : "dépôt manuel"}</p></div>
-          <button id="closeModal" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+          <div class="flex items-center gap-3">
+            <button data-suppfac="${x.id}" class="text-red-500 hover:text-red-700 text-sm font-medium flex items-center gap-1" title="Supprimer la facture et son écriture">🗑 Supprimer</button>
+            <button id="closeModal" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+          </div>
         </div>
         ${x.doublonDe ? `<div class="bg-red-50 border-b border-red-100 px-6 py-2.5 text-sm text-red-700">⚠︎ <strong>Doublon potentiel détecté</strong> : une facture du même fournisseur avec le même montant/numéro existe déjà. Vérifiez avant de comptabiliser.</div>` : ""}
         <div class="grid md:grid-cols-2 gap-0">
@@ -712,7 +715,8 @@ PNG.views = (function () {
         <td class="py-2.5 text-right text-sm font-medium">${U.fmtEUR(x.montantTTC)}</td>
         <td class="py-2.5 text-center"><span class="font-mono text-xs">${e(x.compteCharge)}</span></td>
         <td class="py-2.5 text-center text-xs">${badge(sp.label, sp.cls)}</td>
-        <td class="py-2.5 text-center">${x.driveUrl?`<a href="${e(x.driveUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" class="text-blue-600" title="Drive" onclick="event.stopPropagation()">📁</a>`:""}</td>
+        <td class="py-2.5 text-center">${x.driveUrl?`<a href="${e(x.driveUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" class="text-blue-600" title="Drive">📁</a>`:""}</td>
+        <td class="py-2.5 text-center"><button data-suppfac="${x.id}" onclick="event.stopPropagation()" class="text-red-400 hover:text-red-600" title="Supprimer">🗑</button></td>
       </tr>`;
     }).join("");
     const tHT = list.reduce((s,x)=>s+x.montantHT,0), tTVA=list.reduce((s,x)=>s+x.montantTVA,0), tTTC=list.reduce((s,x)=>s+x.montantTTC,0);
@@ -734,12 +738,12 @@ PNG.views = (function () {
             <th class="font-medium py-2">Date fact.</th><th class="font-medium py-2">Import</th><th class="font-medium py-2">Règlement</th><th class="font-medium py-2">Décaiss.</th>
             <th class="font-medium py-2 text-center">Mode</th>
             <th class="font-medium py-2 text-right">HT</th><th class="font-medium py-2 text-right">TVA</th><th class="font-medium py-2 text-right">TTC</th>
-            <th class="font-medium py-2 text-center">Compte</th><th class="font-medium py-2 text-center">Statut</th><th class="font-medium py-2 text-center">Drive</th>
+            <th class="font-medium py-2 text-center">Compte</th><th class="font-medium py-2 text-center">Statut</th><th class="font-medium py-2 text-center">Drive</th><th class="font-medium py-2 text-center"></th>
           </tr></thead>
-          <tbody>${rows || `<tr><td colspan="13" class="text-center py-8 text-slate-400">Aucune facture</td></tr>`}</tbody>
+          <tbody>${rows || `<tr><td colspan="14" class="text-center py-8 text-slate-400">Aucune facture</td></tr>`}</tbody>
           <tfoot><tr class="border-t-2 border-slate-200 bg-slate-50 font-semibold text-sm">
             <td class="py-2.5 pl-3" colspan="7">TOTAL (${list.length} factures)</td>
-            <td class="py-2.5 text-right">${U.fmtEUR(tHT)}</td><td class="py-2.5 text-right">${U.fmtEUR(tTVA)}</td><td class="py-2.5 text-right">${U.fmtEUR(tTTC)}</td><td colspan="3"></td>
+            <td class="py-2.5 text-right">${U.fmtEUR(tHT)}</td><td class="py-2.5 text-right">${U.fmtEUR(tTVA)}</td><td class="py-2.5 text-right">${U.fmtEUR(tTTC)}</td><td colspan="4"></td>
           </tr></tfoot>
         </table>
       </div>

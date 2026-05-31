@@ -272,6 +272,27 @@ PNG.store = (function () {
     save();
   }
 
+  /* Supprime une facture ET son écriture comptable (journal), et délie
+   * l'éventuelle écriture bancaire rapprochée. */
+  function supprimerFacture(id) {
+    ensureShape();
+    const f = state.factures.find((x) => x.id === id);
+    if (!f) return false;
+    // délie la transaction bancaire éventuellement rapprochée à cette facture
+    state.transactions.forEach((t) => {
+      if (t.lienType === "facture" && t.lienId === id) { t.rapproche = false; t.lienType = null; t.lienId = null; }
+    });
+    // retire l'écriture du journal
+    state.journal = (state.journal || []).filter((e) => e.id !== ("ECR-" + id));
+    // retire la facture
+    state.factures = state.factures.filter((x) => x.id !== id);
+    // reconstruit les fiches fournisseurs (au cas où c'était la seule)
+    rebuildFournisseurs();
+    log("Facture supprimée", `${f.fournisseur} · ${f.numeroFacture} · ${U.fmtEUR(f.montantTTC)}`);
+    save();
+    return true;
+  }
+
   /* Modèles de factures fournisseurs pour la démo (collecte/scan) */
   const MODELES_FAC = [
     { fournisseur: "Bureau Vallée", ht: 154.90, soc: "pnbs-rouen" },
@@ -733,7 +754,7 @@ PNG.store = (function () {
   return {
     load, reset, save, subscribe, get, SOLDES_INIT, log,
     getScope, setScope, inScope,
-    setFactureSociete, setFactureCompte, validerBrouillon, comptabiliser,
+    setFactureSociete, setFactureCompte, validerBrouillon, comptabiliser, supprimerFacture,
     scanNouvelleFacture, deposerMobile, creerDepuisOCR,
     recevoirEmail, traiterEmail, traiterTousEmails, detecterDoublon,
     saisirPaiement, marquerPaye, verifierPaiementBanque, verifierTousPaiements,

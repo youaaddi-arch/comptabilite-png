@@ -62,7 +62,7 @@ PNG.ocr = (function () {
       const buf = await file.arrayBuffer();
       const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
       let out = "";
-      const nb = Math.min(pdf.numPages, 3);
+      const nb = Math.min(pdf.numPages, 8); // jusqu'à 8 pages (factures multi-pages)
       for (let p = 1; p <= nb; p++) {
         const page = await pdf.getPage(p);
         const tc = await page.getTextContent();
@@ -112,6 +112,7 @@ PNG.ocr = (function () {
     } catch (e) { return ""; }
   }
 
+  // Rend la 1re page (aperçu). onlyFirst=true par défaut.
   async function pdfToImage(file) {
     setupPdf();
     if (!window.pdfjsLib) throw new Error("PDF.js indisponible");
@@ -123,6 +124,34 @@ PNG.ocr = (function () {
     canvas.width = viewport.width; canvas.height = viewport.height;
     await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
     return canvas.toDataURL("image/png");
+  }
+
+  // Rend TOUTES les pages empilées verticalement -> 1 image (pour OCR multi-pages).
+  async function pdfToImagesStacked(file, maxPages) {
+    setupPdf();
+    if (!window.pdfjsLib) throw new Error("PDF.js indisponible");
+    const buf = await file.arrayBuffer();
+    const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+    const nb = Math.min(pdf.numPages, maxPages || 8);
+    const scale = 2.2;
+    const pages = [];
+    let totalH = 0, maxW = 0;
+    for (let p = 1; p <= nb; p++) {
+      const page = await pdf.getPage(p);
+      const vp = page.getViewport({ scale });
+      const cv = document.createElement("canvas");
+      cv.width = vp.width; cv.height = vp.height;
+      await page.render({ canvasContext: cv.getContext("2d"), viewport: vp }).promise;
+      pages.push(cv); totalH += cv.height; maxW = Math.max(maxW, cv.width);
+    }
+    if (pages.length === 1) return pages[0].toDataURL("image/png");
+    const big = document.createElement("canvas");
+    big.width = maxW; big.height = totalH;
+    const ctx = big.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, maxW, totalH);
+    let y = 0;
+    pages.forEach((cv) => { ctx.drawImage(cv, 0, y); y += cv.height; });
+    return big.toDataURL("image/png");
   }
 
   function fileToDataURL(file) {
@@ -264,6 +293,11 @@ PNG.ocr = (function () {
     return v.replace(/\s{2,}/g, " ").replace(/[\s,;:-]+$/, "").trim().slice(0, 60);
   }
 
+  function U_companyName(id) {
+    var c = (window.PNG && PNG.companies || []).find(function (x) { return x.id === id; });
+    return c ? c.raisonSociale : "";
+  }
+
   function parseFacture(texte, mots, W, H) {
     const t = (texte || "").replace(/ /g, " ");
     const upper = t.toUpperCase();
@@ -272,11 +306,39 @@ PNG.ocr = (function () {
     // mots/noms techniques à ignorer (polices, métadonnées PDF)
     const JUNK = /\b(arial|helvetica|times|calibri|montserrat|identity|adobe|ucs|tahoma|verdana|cid|truetype|type0|fontello|roboto)\b/i;
 
-    // ---- Société destinataire = une de NOS sociétés (recherche par score) ----
+    // ============ FOURNISSEUR vs DESTINATAIRE (par position) ============
+    // Le FOURNISSEUR est en en-tête (1res lignes). Le DESTINATAIRE (client)
+    // est souvent introduit par "Client / Facturé à / Adressé à / À".
+    // Une société du groupe PEUT être fournisseur d'une autre : on ne s'appuie
+    // donc PAS sur "est-ce une de nos sociétés" pour exclure le fournisseur.
     const compact = upper.replace(/[ .]/g, "");
     const upNoSp = upper.replace(/\s+/g, "");
-    let societeHint = null, bestScore = 0;
-    (window.PNG && PNG.companies || []).forEach((c) => {
+    const nos = nosSirets();
+
+    // Tous les SIRET présents, dans l'ordre d'apparition
+    const siretsOrdre = [];
+    let mm; const reSiret = /\d{14}/g;
+    while ((mm = reSiret.exec(compact))) siretsOrdre.push({ siret: mm[0], pos: mm.index });
+
+    // Repère l'index (dans le texte) du marqueur "client/destinataire"
+    const mClient = upper.search(/CLIENT|FACTUR[ÉE]\s*[ÀA]|ADRESS[ÉE]\s*[ÀA]|[ÀA]\s+L'?ATTENTION|DESTINATAIRE|DOIT\b/);
+    const posClient = mClient >= 0 ? mClient : Infinity;
+
+    // Position d'une de NOS sociétés par signal FORT uniquement
+    // (SIRET/SIREN présent, ou raison sociale exacte). Pas par code postal seul,
+    // sinon faux positifs. Renvoie Infinity si pas de signal fort.
+    function positionSociete(c) {
+      let best = Infinity;
+      const ids = [c.siret].concat((c.etablissements || []).map((e) => e.siret)).filter(Boolean).map((x) => String(x).replace(/\D/g, ""));
+      if (c.siren) ids.push(String(c.siren).replace(/\D/g, ""));
+      ids.forEach((id) => { if (id && id.length >= 9) { const p = compact.indexOf(id); if (p >= 0 && p < best) best = p; } });
+      if (c.raisonSociale && c.raisonSociale.length > 4) { const p = upper.indexOf(c.raisonSociale.toUpperCase()); if (p >= 0 && p < best) best = p; }
+      if (c.marque && c.marque.length > 4) { const p = upNoSp.indexOf(c.marque.toUpperCase().replace(/\s+/g, "")); if (p >= 0 && p < best) best = p; }
+      return best;
+    }
+
+    // Score de présence d'une de nos sociétés (sert à choisir le destinataire)
+    function scoreSociete(c, posCible) {
       let sc = 0;
       const ids = [c.siret].concat((c.etablissements || []).map((e) => e.siret)).filter(Boolean).map((x) => String(x).replace(/\D/g, ""));
       if (c.siren) ids.push(String(c.siren).replace(/\D/g, ""));
@@ -290,36 +352,75 @@ PNG.ocr = (function () {
         if (cp && upper.indexOf(cp) >= 0) { sc += 2; if (motRue && upper.indexOf(motRue) >= 0) sc += 3; }
       });
       if (c.marque && c.marque.length > 4 && upNoSp.indexOf(c.marque.toUpperCase().replace(/\s+/g, "")) >= 0) sc += 2;
+      // bonus si la société apparaît APRÈS le marqueur "client" (= destinataire)
+      if (posCible < Infinity && posCible >= posClient) sc += 4;
+      return sc;
+    }
+
+    // Liste de nos sociétés présentes avec leur position
+    const presentes = (window.PNG && PNG.companies || [])
+      .map((c) => ({ c, pos: positionSociete(c) }))
+      .filter((o) => o.pos < Infinity)
+      .sort((a, b) => a.pos - b.pos);
+
+    // FOURNISSEUR membre du groupe = une de nos sociétés présente AVANT le
+    // marqueur "client" (donc en en-tête). Sinon le fournisseur est externe.
+    let societeFournisseur = null;
+    if (presentes.length && presentes[0].pos < posClient) societeFournisseur = presentes[0].c;
+
+    // DESTINATAIRE = la nôtre la mieux scorée, en privilégiant celle après "client"
+    // et en évitant de reprendre le fournisseur si une autre est présente.
+    let societeHint = null, bestScore = 0;
+    (window.PNG && PNG.companies || []).forEach((c) => {
+      const pos = positionSociete(c);
+      let sc = scoreSociete(c, pos);
+      // si c'est aussi le fournisseur en en-tête et qu'une autre société existe, on pénalise
+      if (societeFournisseur && c.id === societeFournisseur.id && presentes.length > 1) sc -= 8;
       if (sc > bestScore) { bestScore = sc; societeHint = c.id; }
     });
-    if (bestScore < 4) societeHint = null; // évite les faux positifs (sinon à choisir)
+    if (bestScore < 4) societeHint = null;
 
-    // ---- SIRET : sépare le nôtre (destinataire) du fournisseur ----
-    const sirets = (compact.match(/\d{14}/g) || []);
-    const nos = nosSirets();
+    // ---- SIRET fournisseur vs destinataire ----
     let siretFournisseur = "", siretNous = "";
-    sirets.forEach((x) => {
+    // si on a identifié notre destinataire, son SIRET = le nôtre
+    sirets_loop:
+    for (const o of siretsOrdre) {
+      const x = o.siret;
       if (nos.has(x) || nos.has(x.slice(0, 9))) { if (!siretNous) siretNous = x; }
-      else if (!siretFournisseur) siretFournisseur = x;
-    });
+    }
+    // fournisseur : 1er SIRET qui n'est pas celui du destinataire reconnu
+    for (const o of siretsOrdre) {
+      if (o.siret !== siretNous) { siretFournisseur = o.siret; break; }
+    }
     const sirenLabel = compact.match(/SIREN[:\s]*(\d{9})/) || compact.match(/RCS[A-Z\s]*?(\d{9})/);
     let sirenFournisseur = siretFournisseur ? siretFournisseur.slice(0, 9) : "";
-    if (!sirenFournisseur && sirenLabel && !nos.has(sirenLabel[1])) sirenFournisseur = sirenLabel[1];
+    if (!sirenFournisseur && sirenLabel) sirenFournisseur = sirenLabel[1];
 
-    // ---- Fournisseur (nom) : par position si dispo, sinon 1re ligne d'en-tête ----
-    let fournisseur = fournisseurParPosition(mots, W, H);
+    // ---- Fournisseur (NOM) ----
+    let fournisseur = "";
+    // 1) fournisseur = membre du groupe SEULEMENT s'il est distinct du destinataire
+    //    ET prouvé par son SIRET/SIREN dans le texte (évite faux positifs).
+    if (societeFournisseur && societeFournisseur.id !== societeHint) {
+      const fid = String(societeFournisseur.siren || "").replace(/\D/g, "");
+      const fSirets = [societeFournisseur.siret].concat((societeFournisseur.etablissements || []).map((e) => e.siret)).filter(Boolean).map((x) => String(x).replace(/\D/g, ""));
+      const prouve = (fid && compact.indexOf(fid) >= 0) || fSirets.some((s) => compact.indexOf(s) >= 0);
+      if (prouve) fournisseur = societeFournisseur.raisonSociale;
+    }
+    // 2) sinon, position (bbox) ou 1re ligne d'en-tête plausible
+    if (!fournisseur) fournisseur = fournisseurParPosition(mots, W, H);
     if (!fournisseur) {
+      const nomDest = societeHint ? (U_companyName(societeHint) || "") : "";
       const candidate = lignes.filter((l) => {
         if (JUNK.test(l)) return false;
-        if (estNotreSociete(l)) return false;                       // jamais notre société
-        if (/facture|invoice|devis|^date|^n[\u00b0o]\b|siret|siren|tva|iban|bic|rib|t[\u00e9e]l|@|www|http|^code|page|\bque?\b/i.test(l)) return false;
-        if (/\bcapital\b|\brcs\b|\bnaf\b|\bape\b|au capital|r\.c\.s|p[\u00e9e]nalit|escompte|condition|r[\u00e8e]glement|\bd[\u00e9e]lai\b|si[\u00e8e]ge|tva intra|identifiant/i.test(l)) return false;
-        if (/^\d/.test(l)) return false;                            // commence par chiffre = adresse/montant
-        if (/^[\d\s.,\u20ac%\/-]+$/.test(l)) return false;
-        if (!/[A-Za-z\u00c0-\u00ff]{3}/.test(l)) return false;
+        if (nomDest && l.toUpperCase().indexOf(nomDest.toUpperCase()) >= 0) return false; // pas le destinataire
+        if (/facture|invoice|devis|^date|^n[°o]\b|siret|siren|tva|iban|bic|rib|t[ée]l|@|www|http|^code|page|\bque?\b|client|factur[ée]\s*[àa]/i.test(l)) return false;
+        if (/\bcapital\b|\brcs\b|\bnaf\b|\bape\b|au capital|r\.c\.s|p[ée]nalit|escompte|condition|r[èe]glement|\bd[ée]lai\b|si[èe]ge|tva intra|identifiant/i.test(l)) return false;
+        if (/^\d/.test(l)) return false;
+        if (/^[\d\s.,€%\/-]+$/.test(l)) return false;
+        if (!/[A-Za-zÀ-ÿ]{3}/.test(l)) return false;
         return true;
       });
-      const best = candidate[0];                                     // nom = 1re ligne d'en-tête
+      const best = candidate[0];
       fournisseur = best ? nettoyerNomFournisseur(best) : "";
     }
 
@@ -455,9 +556,10 @@ PNG.ocr = (function () {
     if (!resp.ok) throw new Error("OCR.space HTTP " + resp.status);
     var data = await resp.json();
     if (data.IsErroredOnProcessing) throw new Error((data.ErrorMessage && data.ErrorMessage[0]) || "Erreur OCR.space");
-    var pr = (data.ParsedResults && data.ParsedResults[0]) || {};
     if (onProgress) onProgress(0.9, "Analyse des champs…");
-    return pr.ParsedText || "";
+    // concatène le texte de TOUTES les pages (factures multi-pages)
+    var parts = (data.ParsedResults || []).map(function (r) { return r.ParsedText || ""; });
+    return parts.join("\n");
   }
 
   /* ---- Mindee : extraction STRUCTURÉE des champs de facture ------------- */
@@ -568,7 +670,14 @@ PNG.ocr = (function () {
     // 2) OCR.space : texte -> parseFacture
     if (engine === "ocrspace" || engine === "mindee") {
       try {
-        const texte = await ocrspaceText(file, onProgress, isPdf ? apercu : null);
+        // Multi-pages : on rend toutes les pages empilées en 1 image (sinon
+        // l'envoi direct du PDF est limité à ~3 pages sur l'offre gratuite).
+        let img = null;
+        if (isPdf) {
+          if (onProgress) onProgress(0.18, "Préparation des pages…");
+          try { img = await pdfToImagesStacked(file, 8); } catch (e2) { img = apercu; }
+        }
+        const texte = await ocrspaceText(file, onProgress, img);
         if (texte && texte.trim().length > 0) {
           const champs = parseFacture(texte, null, 0, 0);
           champs.moteur = "OCR.space";
