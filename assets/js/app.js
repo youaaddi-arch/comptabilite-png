@@ -74,10 +74,63 @@
   }
 
   /* --------------------------- Modale ------------------------------ */
+  let ocrActiveField = null; // {id, mode} champ ciblé pour l'OCR de zone
   function openModal(id) {
     const wrap = document.getElementById("modal");
     wrap.innerHTML = V.factureModal(id);
     wrap.classList.remove("hidden");
+    ocrActiveField = null;
+    setupZoneOCR();
+  }
+
+  /* Sélection d'une zone sur l'aperçu pour océriser dans le champ ciblé */
+  function setupZoneOCR() {
+    const wrap = document.getElementById("ocrZoneWrap");
+    const img = document.getElementById("ocrZoneImg");
+    if (!wrap || !img) return;
+    let startX, startY, box = null, dragging = false;
+
+    function pos(ev) {
+      const r = img.getBoundingClientRect();
+      const e2 = ev.touches ? ev.touches[0] : ev;
+      return { x: e2.clientX - r.left, y: e2.clientY - r.top };
+    }
+    function down(ev) {
+      if (!ocrActiveField) { toast("① Cliquez d'abord le champ à remplir, puis dessinez la zone", "#ea580c"); return; }
+      dragging = true; const p = pos(ev); startX = p.x; startY = p.y;
+      box = document.createElement("div");
+      box.style.cssText = "position:absolute;border:2px solid #2563eb;background:rgba(37,99,235,.15);pointer-events:none;z-index:5";
+      wrap.appendChild(box); ev.preventDefault();
+    }
+    function move(ev) {
+      if (!dragging || !box) return;
+      const p = pos(ev);
+      const x = Math.min(p.x, startX), y = Math.min(p.y, startY);
+      const w = Math.abs(p.x - startX), h = Math.abs(p.y - startY);
+      box.style.left = x + "px"; box.style.top = y + "px"; box.style.width = w + "px"; box.style.height = h + "px";
+      ev.preventDefault();
+    }
+    async function up(ev) {
+      if (!dragging || !box) return; dragging = false;
+      const rect = { x: parseFloat(box.style.left), y: parseFloat(box.style.top), w: parseFloat(box.style.width || 0), h: parseFloat(box.style.height || 0) };
+      const keep = box; setTimeout(() => keep && keep.remove(), 400);
+      if (rect.w < 6 || rect.h < 6) { box.remove(); return; }
+      const field = ocrActiveField;
+      ocrOverlay("Lecture de la zone sélectionnée…", 0.5);
+      try {
+        const val = await PNG.ocr.ocrZone(img, rect, field.mode);
+        ocrOverlayClose();
+        const el = document.getElementById(field.id);
+        if (el && val !== "" && val != null) {
+          el.value = val;
+          // recalcul si montant
+          if (field.id === "edHT" || field.id === "edTaux") el.dispatchEvent(new Event("input", { bubbles: true }));
+          toast("Zone océrisée → " + val, "#059669");
+        } else toast("Rien de lisible dans cette zone", "#ea580c");
+      } catch (err) { ocrOverlayClose(); toast("Erreur OCR zone : " + (err && err.message || "?"), "#dc2626"); }
+    }
+    wrap.addEventListener("mousedown", down); wrap.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+    wrap.addEventListener("touchstart", down); wrap.addEventListener("touchmove", move); wrap.addEventListener("touchend", up);
   }
   function openMobileModal() {
     const wrap = document.getElementById("modal");
@@ -280,6 +333,19 @@
   });
 
   // Changements de sélection dans la modale (société / compte)
+  // Sélection du champ cible pour l'OCR de zone (focus / clic)
+  document.addEventListener("focusin", (ev) => {
+    const el = ev.target;
+    if (el && el.dataset && el.dataset.ocrfield) {
+      ocrActiveField = { id: el.id, mode: el.dataset.ocrfield };
+      // surbrillance visuelle du champ actif
+      document.querySelectorAll("[data-ocrfield]").forEach((x) => x.classList.remove("ring-2", "ring-blue-400"));
+      el.classList.add("ring-2", "ring-blue-400");
+      const hint = document.getElementById("zoneHint");
+      if (hint) hint.textContent = "② Dessinez la zone sur la facture pour remplir « " + (el.previousElementSibling ? el.previousElementSibling.textContent : el.id) + " »";
+    }
+  });
+
   document.addEventListener("change", (ev) => {
     const el = ev.target;
     if (el.id === "selCpt") { S.setFactureCompte(el.dataset.id, el.value); toast("Compte modifié"); }
@@ -303,7 +369,8 @@
   });
 
   window.addEventListener("hashchange", render);
-  document.getElementById("btnReset2") && document.getElementById("btnReset2").addEventListener("click", () => {});
+  // Échap ferme la modale
+  document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") closeModal(); });
 
   /* ------------------------------ Init ----------------------------- */
   // Démarrage protégé : si d'anciennes données cassent le rendu, on

@@ -342,7 +342,7 @@ PNG.views = (function () {
 
     return `
     <div class="fixed inset-0 bg-slate-900/50 z-40 flex items-center justify-center p-4" id="modalBack">
-      <div class="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[92vh] overflow-y-auto" onclick="event.stopPropagation()">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[92vh] overflow-y-auto">
         <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 sticky top-0 bg-white">
           <div><h2 class="font-bold text-slate-800">${e(x.fournisseur)} · ${e(x.numeroFacture)}</h2><p class="text-xs text-slate-400">${e(x.fichier)} · ${x.source === "email" ? `reçu par email (${e(x.sourceEmail||"")})` : x.source === "scan" ? "scan" : "dépôt manuel"}</p></div>
           <button id="closeModal" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
@@ -352,7 +352,12 @@ PNG.views = (function () {
           <!-- Aperçu document : image réelle si OCR, sinon reconstitution -->
           <div class="p-6 bg-slate-50 border-r border-slate-100">
             ${x.apercu
-              ? `<img src="${x.apercu}" alt="Aperçu de la facture" class="w-full rounded-lg border border-slate-200 shadow-sm" />`
+              ? `${editable ? `<div class="mb-2 flex items-center gap-2 text-xs">
+                    <span id="zoneHint" class="px-2 py-1 rounded-lg bg-blue-50 text-blue-700">①&nbsp;Cliquez un champ à droite, ② puis dessinez la zone sur la facture pour l'océriser.</span>
+                  </div>` : ""}
+                <div id="ocrZoneWrap" class="relative inline-block w-full ${editable ? "cursor-crosshair" : ""}" data-id="${x.id}">
+                  <img id="ocrZoneImg" src="${x.apercu}" alt="Aperçu de la facture" class="w-full rounded-lg border border-slate-200 shadow-sm select-none" draggable="false" />
+                </div>`
               : `<div class="bg-white border border-slate-200 rounded-lg p-5 shadow-sm text-sm">
               <div class="flex justify-between items-start mb-4">
                 <div><p class="font-bold text-slate-800">${e(x.fournisseur)}</p><p class="text-xs text-slate-400">${e(x.categorie)}</p></div>
@@ -376,10 +381,10 @@ PNG.views = (function () {
             <h3 class="text-xs font-semibold text-slate-400 uppercase mb-2">Données extraites (OCR) ${editable ? "— modifiables" : ""}</h3>
             ${editable ? `
             <div class="space-y-2 mb-2">
-              <div><label class="block text-[11px] text-slate-400">Fournisseur</label><input id="edFournisseur" data-id="${x.id}" value="${e(x.fournisseur)}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>
+              <div><label class="block text-[11px] text-slate-400">Fournisseur</label><input id="edFournisseur" data-ocrfield="text" data-id="${x.id}" value="${e(x.fournisseur)}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>
               <div><label class="block text-[11px] text-slate-400">Société</label><select id="edSoc" data-id="${x.id}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm">${optionsSoc}</select></div>
               <div class="grid grid-cols-2 gap-2">
-                <div><label class="block text-[11px] text-slate-400">N° facture</label><input id="edNum" data-id="${x.id}" value="${e(x.numeroFacture)}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>
+                <div><label class="block text-[11px] text-slate-400">N° facture</label><input id="edNum" data-ocrfield="text" data-id="${x.id}" value="${e(x.numeroFacture)}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>
                 <div><label class="block text-[11px] text-slate-400">Catégorie</label><input id="edCat" data-id="${x.id}" value="${e(x.categorie)}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>
               </div>
               <div class="grid grid-cols-2 gap-2">
@@ -387,11 +392,11 @@ PNG.views = (function () {
                 <div><label class="block text-[11px] text-slate-400">Échéance</label><input id="edEch" data-id="${x.id}" type="date" value="${e(x.echeance)}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>
               </div>
               <div class="grid grid-cols-3 gap-2">
-                <div><label class="block text-[11px] text-slate-400">Montant HT</label><input id="edHT" data-id="${x.id}" inputmode="decimal" value="${x.montantHT}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>
+                <div><label class="block text-[11px] text-slate-400">Montant HT</label><input id="edHT" data-ocrfield="amount" data-id="${x.id}" inputmode="decimal" value="${x.montantHT}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>
                 <div><label class="block text-[11px] text-slate-400">Taux TVA %</label><input id="edTaux" data-id="${x.id}" inputmode="decimal" value="${x.tauxTva}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>
-                <div><label class="block text-[11px] text-slate-400">TVA €</label><input id="edTVA" data-id="${x.id}" inputmode="decimal" value="${x.montantTVA}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>
+                <div><label class="block text-[11px] text-slate-400">TVA €</label><input id="edTVA" data-ocrfield="amount" data-id="${x.id}" inputmode="decimal" value="${x.montantTVA}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>
               </div>
-              <div><label class="block text-[11px] text-slate-400">Montant TTC</label><input id="edTTC" data-id="${x.id}" inputmode="decimal" value="${x.montantTTC}" class="w-full border border-amber-200 bg-amber-50 rounded-lg px-3 py-2 text-sm font-semibold" /></div>
+              <div><label class="block text-[11px] text-slate-400">Montant TTC</label><input id="edTTC" data-ocrfield="amount" data-id="${x.id}" inputmode="decimal" value="${x.montantTTC}" class="w-full border border-amber-200 bg-amber-50 rounded-lg px-3 py-2 text-sm font-semibold" /></div>
               <button data-savefac="${x.id}" class="w-full bg-slate-700 hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-sm font-medium">💾 Enregistrer les modifications</button>
               <p class="text-[10px] text-slate-400">Astuce : si vous changez HT ou le taux, la TVA et le TTC se recalculent. Vous pouvez aussi forcer le TTC directement.</p>
             </div>` : `
@@ -685,7 +690,7 @@ PNG.views = (function () {
         <td class="py-2.5 text-right text-sm font-medium">${U.fmtEUR(x.montantTTC)}</td>
         <td class="py-2.5 text-center"><span class="font-mono text-xs">${e(x.compteCharge)}</span></td>
         <td class="py-2.5 text-center text-xs">${badge(sp.label, sp.cls)}</td>
-        <td class="py-2.5 text-center">${x.driveUrl?`<a href="${e(x.driveUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" class="text-blue-600" title="Drive">📁</a>`:""}</td>
+        <td class="py-2.5 text-center">${x.driveUrl?`<a href="${e(x.driveUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" class="text-blue-600" title="Drive" onclick="event.stopPropagation()">📁</a>`:""}</td>
       </tr>`;
     }).join("");
     const tHT = list.reduce((s,x)=>s+x.montantHT,0), tTVA=list.reduce((s,x)=>s+x.montantTVA,0), tTTC=list.reduce((s,x)=>s+x.montantTTC,0);
@@ -789,7 +794,7 @@ PNG.views = (function () {
     const optionsSoc = PNG.companies.filter((c) => S.SOLDES_INIT[c.id]).map((co) => `<option value="${co.id}">${e(co.raisonSociale)}</option>`).join("");
     return `
     <div class="fixed inset-0 bg-slate-900/50 z-40 flex items-center justify-center p-4" id="modalBack">
-      <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm" onclick="event.stopPropagation()">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm">
         <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <h2 class="font-bold text-slate-800">📱 Dépôt mobile — salarié</h2>
           <button id="closeModal" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
@@ -839,7 +844,7 @@ PNG.views = (function () {
     }).join("");
     return `
     <div class="fixed inset-0 bg-slate-900/50 z-40 flex items-center justify-center p-4" id="modalBack">
-      <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[88vh] overflow-y-auto" onclick="event.stopPropagation()">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[88vh] overflow-y-auto">
         <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <div><h2 class="font-bold text-slate-800">Rapprocher manuellement</h2>
           <p class="text-xs text-slate-400">${e(t.libelle)} · ${U.fmtDate(t.date)} · <span class="${credit?'text-emerald-600':'text-red-500'}">${credit?'+':''}${U.fmtEUR(t.montant)}</span></p></div>
@@ -862,7 +867,7 @@ PNG.views = (function () {
     const q = x.fournisseurSiret || x.fournisseurSiren || x.fournisseur || "";
     return `
     <div class="fixed inset-0 bg-slate-900/50 z-40 flex items-center justify-center p-4" id="modalBack">
-      <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[88vh] overflow-y-auto" onclick="event.stopPropagation()">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[88vh] overflow-y-auto">
         <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <div><h2 class="font-bold text-slate-800">＋ Nouveau fournisseur</h2>
           <p class="text-xs text-slate-400">Recherche officielle sur data.gouv (raison sociale, SIREN, SIRET, adresse du siège)</p></div>

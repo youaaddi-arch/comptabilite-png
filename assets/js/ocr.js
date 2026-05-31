@@ -115,16 +115,22 @@ PNG.ocr = (function () {
       fournisseur = reparerEspaces(l).slice(0, 60); break;
     }
 
-    // N° de facture — plusieurs formulations possibles
+    // N° de facture — après "N°" (avec ou sans "facture") c'est presque
+    // toujours le numéro. On essaie du plus précis au plus général.
     let numeroFacture = "";
+    const VAL = "([A-Za-z0-9][A-Za-z0-9\\-\\/\\._]{1,})";
     const numPatterns = [
-      /n[°o]\s*(?:de\s*)?facture\s*[:#]?\s*([A-Z0-9][A-Z0-9\-\/\._]{2,})/i,
-      /num[ée]ro\s*(?:de\s*)?facture\s*[:#]?\s*([A-Z0-9][A-Z0-9\-\/\._]{2,})/i,
-      /(?:facture|invoice)\s*(?:n[°o]|num[ée]ro|#|:)?\s*[:#]?\s*([A-Z0-9][A-Z0-9\-\/\._]{2,})/i,
+      new RegExp("n[°o]\\s*(?:de\\s*)?facture\\s*[:#]?\\s*" + VAL, "i"),
+      new RegExp("num[ée]ro\\s*(?:de\\s*)?facture\\s*[:#]?\\s*" + VAL, "i"),
+      new RegExp("facture\\s*(?:n[°o]|num[ée]ro)?\\s*[:#]?\\s*" + VAL, "i"),
+      new RegExp("invoice\\s*(?:n[°o]|number|#|:)?\\s*[:#]?\\s*" + VAL, "i"),
+      // "N°" seul suivi d'une valeur (cas le plus fréquent)
+      new RegExp("\\bn[°o]\\s*[:#]?\\s*" + VAL, "i"),
     ];
+    const stop = /^(date|tva|ttc|ht|du|le|la|de|et|siret|siren)$/i;
     for (const re of numPatterns) {
       const m = t.match(re);
-      if (m && m[1] && !/^(date|tva|ttc|ht|du|le)$/i.test(m[1])) { numeroFacture = m[1].replace(/[.\s]+$/, ""); break; }
+      if (m && m[1] && !stop.test(m[1]) && /\d/.test(m[1])) { numeroFacture = m[1].replace(/[.\s,;]+$/, ""); break; }
     }
 
     // SIREN/SIRET : priorité au SIRET (14) ; SIREN explicite ou dérivé du SIRET
@@ -179,5 +185,30 @@ PNG.ocr = (function () {
     return { apercu: imgURL, champs };
   }
 
-  return { dispo, analyser, parseFacture, pdfToImage, imageToText };
+  /* OCR d'une ZONE de l'aperçu. imgEl = <img>, rect = {x,y,w,h} en pixels
+   * relatifs à l'image AFFICHÉE. Recadre en pleine résolution puis océrise.
+   * mode "amount" garde surtout les chiffres, "text" nettoie la casse. */
+  async function ocrZone(imgEl, rect, mode) {
+    if (!window.Tesseract) throw new Error("Tesseract indisponible");
+    const scaleX = imgEl.naturalWidth / imgEl.clientWidth;
+    const scaleY = imgEl.naturalHeight / imgEl.clientHeight;
+    const sx = Math.max(0, rect.x * scaleX), sy = Math.max(0, rect.y * scaleY);
+    const sw = Math.max(4, rect.w * scaleX), sh = Math.max(4, rect.h * scaleY);
+    const canvas = document.createElement("canvas");
+    const up = 2; // sur-échantillonnage pour mieux lire les petits caractères
+    canvas.width = sw * up; canvas.height = sh * up;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(imgEl, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    const res = await window.Tesseract.recognize(canvas.toDataURL("image/png"), "fra+eng");
+    let txt = (res.data.text || "").replace(/\n+/g, " ").trim();
+    if (mode === "amount") {
+      const m = txt.replace(/[^0-9.,]/g, " ").match(/\d[\d\s.,]*\d|\d/);
+      txt = m ? parseMontant(m[0]) : txt;
+    } else {
+      txt = reparerEspaces(txt).replace(/\s{2,}/g, " ").trim();
+    }
+    return txt;
+  }
+
+  return { dispo, analyser, parseFacture, pdfToImage, imageToText, ocrZone };
 })();
