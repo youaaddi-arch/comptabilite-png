@@ -233,6 +233,16 @@ PNG.store = (function () {
       f.montantTVA = Math.round((f.montantHT * f.tauxTva / 100) * 100) / 100;
       f.montantTTC = Math.round((f.montantHT + f.montantTVA) * 100) / 100;
     }
+    // recontrôle de cohérence des montants après édition
+    const r2 = (x) => Math.round((x || 0) * 100) / 100;
+    const al = [];
+    if (f.montantHT != null && f.montantTVA != null && f.montantTTC != null) {
+      if (Math.abs(r2(f.montantHT + f.montantTVA) - f.montantTTC) > 0.02)
+        al.push("HT (" + r2(f.montantHT) + ") + TVA (" + r2(f.montantTVA) + ") = " + r2(f.montantHT + f.montantTVA) + " ≠ TTC (" + r2(f.montantTTC) + ")");
+      if (f.tauxTva && Math.abs(r2(f.montantHT * f.tauxTva / 100) - f.montantTVA) > 0.02)
+        al.push("TVA saisie (" + r2(f.montantTVA) + ") ≠ TVA calculée " + f.tauxTva + "% (" + r2(f.montantHT * f.tauxTva / 100) + ")");
+    }
+    f.alerteMontants = al.length ? al : null;
     // re-détecte un doublon après modif
     f.doublonDe = (detecterDoublon(f) || {}).id || null;
     f.modifie = true;

@@ -345,16 +345,21 @@ PNG.ocr = (function () {
       }
     }
 
-    // ---- TVA / montants ----
-    const tvaNonAppl = /tva\s+non\s+applicable|art(?:icle)?\.?\s*293\s*b|exon[ée]ration\s+de\s+tva/i.test(t);
-    let ttc = montantApresMot(t, "total\\s*ttc|net\\s*[àa]\\s*payer|montant\\s*ttc|total\\s*t\\.?t\\.?c|reste\\s*d[ûu]");
-    let ht = montantApresMot(t, "total\\s*ht|montant\\s*ht|total\\s*h\\.?t");
-    let tva = montantApresMot(t, "total\\s*tva|t\\.?v\\.?a\\.?\\s*\\(?\\d|montant\\s*tva", true);
-    const tauxM = t.match(/tva[^%\d]{0,8}(\d{1,2}(?:[.,]\d)?)\s*%|(\d{1,2})\s*%/i);
-    let taux = tvaNonAppl ? 0 : (tauxM ? parseMontant(tauxM[1] || tauxM[2]) : 20);
+    // ---- TVA / montants ---- (on PIOCHE dans le texte brut)
+    const tvaNonAppl = /tva\s+non\s+applicable|art(?:icle)?\.?\s*293\s*b|exon[ée]ration\s+de\s+tva|non\s+assujetti/i.test(t);
+    let ttc = montantApresMot(t, "total\\s*ttc|net\\s*[àa]\\s*payer|montant\\s*ttc|total\\s*t\\.?t\\.?c|total\\s*[àa]\\s*payer");
+    let ht  = montantApresMot(t, "total\\s*ht|montant\\s*ht|total\\s*h\\.?t|sous[- ]?total|base\\s*ht");
+    let tva = montantApresMot(t, "total\\s*tva|montant\\s*(?:de\\s*)?tva|t\\.?v\\.?a\\.?\\s*\\(?\\s*\\d", true);
+    // taux : "TVA 20%" / "TVA (20%)" / "(20 %)" / "20,00%"
+    const tauxM = t.match(/t\.?v\.?a\.?[^%\d]{0,10}(\d{1,2}(?:[.,]\d{1,2})?)\s*%/i) || t.match(/\((\d{1,2}(?:[.,]\d{1,2})?)\s*%\)/) || t.match(/(\d{1,2}(?:[.,]\d)?)\s*%/);
+    let taux = tvaNonAppl ? 0 : (tauxM ? parseMontant(tauxM[1]) : 20);
 
     const montants = tousMontants(t).sort((a, b) => a - b);
     if (ttc == null && montants.length) ttc = montants[montants.length - 1];
+
+    // valeurs détectées telles quelles (pour le contrôle de cohérence)
+    const detHT = ht, detTVA = tva, detTTC = ttc;
+
     if (tvaNonAppl) {
       if (ht == null && ttc != null) ht = ttc;
       if (ttc == null && ht != null) ttc = ht;
@@ -367,6 +372,25 @@ PNG.ocr = (function () {
       if (ttc == null && ht != null) ttc = Math.round((ht + (tva || 0)) * 100) / 100;
     }
 
+    // ---- CONTRÔLE DE COHÉRENCE : HT + TVA = TTC, et TVA ≈ HT*taux ----
+    const alertes = [];
+    const r2 = (x) => Math.round((x || 0) * 100) / 100;
+    if (ht != null && tva != null && ttc != null) {
+      const sommeTTC = r2(ht + tva);
+      if (Math.abs(sommeTTC - ttc) > 0.02) {
+        alertes.push("Incohérence : HT (" + r2(ht) + ") + TVA (" + r2(tva) + ") = " + sommeTTC + " ≠ TTC détecté (" + r2(ttc) + ")");
+      }
+      if (!tvaNonAppl && taux) {
+        const tvaTheo = r2(ht * taux / 100);
+        if (Math.abs(tvaTheo - tva) > 0.02) {
+          alertes.push("TVA détectée (" + r2(tva) + ") ≠ TVA calculée " + taux + "% (" + tvaTheo + ")");
+        }
+      }
+      // si une valeur a été détectée ET diffère du recalcul, on le signale
+      if (detTTC != null && Math.abs(detTTC - ttc) > 0.02) alertes.push("TTC : détecté " + r2(detTTC) + " vs retenu " + r2(ttc));
+      if (detHT != null && Math.abs(detHT - ht) > 0.02) alertes.push("HT : détecté " + r2(detHT) + " vs retenu " + r2(ht));
+    }
+
     const dates = findDates(t);
 
     return {
@@ -377,6 +401,7 @@ PNG.ocr = (function () {
       societeHint: societeHint,
       dateFacture: dates[0] || null,
       montantHT: ht, montantTVA: tva, montantTTC: ttc, tauxTva: taux,
+      alerteMontants: alertes.length ? alertes : null,
       texteBrut: t.slice(0, 4000),
     };
   }
