@@ -333,6 +333,7 @@ PNG.store = (function () {
     champs = champs || {};
     // société destinataire : si l'OCR a trouvé NOTRE SIRET, on l'utilise
     let soc = opts.societeId;
+    if (!soc && champs.societeHint) soc = champs.societeHint;
     if (!soc && champs.siretDestinataire) {
       const found = PNG.companies.find((c) => {
         const s = champs.siretDestinataire;

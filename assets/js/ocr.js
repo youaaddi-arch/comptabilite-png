@@ -226,63 +226,96 @@ PNG.ocr = (function () {
   }
 
   function parseFacture(texte, mots, W, H) {
-    const t = texte.replace(/ /g, " ");
+    const t = (texte || "").replace(/ /g, " ");
     const upper = t.toUpperCase();
-    const lignes = t.split(/\n/).map((l) => l.trim()).filter((l) => l.length > 2);
+    let lignes = t.split(/\n/).map((l) => l.replace(/\s{2,}/g, " ").trim()).filter((l) => l.length > 1);
 
-    // ----- SIRET : sépare le nôtre (destinataire) du fournisseur -----
+    // mots/noms techniques à ignorer (polices, métadonnées PDF)
+    const JUNK = /\b(arial|helvetica|times|calibri|montserrat|identity|adobe|ucs|tahoma|verdana|cid|truetype|type0|fontello|roboto)\b/i;
+
+    // ---- Société destinataire = une de NOS sociétés citée sur la facture ----
+    let societeHint = null;
+    (window.PNG && PNG.companies || []).forEach((c) => {
+      if (societeHint) return;
+      const noms = [c.raisonSociale, c.marque].filter(Boolean);
+      for (const nom of noms) {
+        if (nom && nom.length > 3 && upper.includes(nom.toUpperCase())) { societeHint = c.id; break; }
+      }
+    });
+
+    // ---- SIRET : sépare le nôtre (destinataire) du fournisseur ----
     const compact = upper.replace(/[ .]/g, "");
     const sirets = (compact.match(/\d{14}/g) || []);
     const nos = nosSirets();
     let siretFournisseur = "", siretNous = "";
-    sirets.forEach((s) => {
-      if (nos.has(s) || nos.has(s.slice(0, 9))) { if (!siretNous) siretNous = s; }
-      else if (!siretFournisseur) siretFournisseur = s;
+    sirets.forEach((x) => {
+      if (nos.has(x) || nos.has(x.slice(0, 9))) { if (!siretNous) siretNous = x; }
+      else if (!siretFournisseur) siretFournisseur = x;
     });
-    // SIREN explicite éventuel
-    const sirenLabel = compact.match(/SIREN[:\s]*(\d{9})/);
+    const sirenLabel = compact.match(/SIREN[:\s]*(\d{9})/) || compact.match(/RCS[A-Z\s]*?(\d{9})/);
     let sirenFournisseur = siretFournisseur ? siretFournisseur.slice(0, 9) : "";
     if (!sirenFournisseur && sirenLabel && !nos.has(sirenLabel[1])) sirenFournisseur = sirenLabel[1];
 
-    // ----- Fournisseur : position d'abord, sinon heuristique texte -----
+    // ---- Fournisseur (nom) : par position si dispo, sinon heuristique texte ----
     let fournisseur = fournisseurParPosition(mots, W, H);
     if (!fournisseur) {
-      for (const l of lignes) {
-        if (/facture|invoice|devis|n[°o]\b|siret|siren|tva|date|client|adresse|@/i.test(l)) continue;
-        if (/^[\d\s.,€%-]+$/.test(l)) continue;
-        if (!/[A-Za-zÀ-ÿ]{2}/.test(l)) continue;
-        if (estNotreSociete(l)) continue;          // ne prend jamais notre société
-        fournisseur = reparerEspaces(l).slice(0, 60); break;
-      }
+      // cherche une ligne "société" plausible : contient forme juridique, ou
+      // proche d'un SIRET, en excluant nos sociétés et le charabia technique.
+      const candidate = lignes.filter((l) => {
+        if (JUNK.test(l)) return false;
+        if (estNotreSociete(l)) return false;
+        if (/facture|invoice|devis|^date|^n[°o]\b|siret|siren|tva|iban|bic|rib|t[ée]l|@|www|http|code|page|\bque?\b/i.test(l)) return false;
+        if (/^[\d\s.,€%\/-]+$/.test(l)) return false;
+        if (!/[A-Za-zÀ-ÿ]{3}/.test(l)) return false;
+        return true;
+      });
+      // priorité : ligne avec forme juridique (SARL/SAS…)
+      let best = candidate.find((l) => /\b(SARL|SASU|SAS|EURL|SCI|SNC|SA|EI)\b/i.test(l));
+      if (!best) best = candidate[0];
+      fournisseur = best ? reparerEspaces(best).replace(/[,;].*$/, "").slice(0, 60) : "";
     }
 
-    // ----- N° de facture -----
+    // ---- N° de facture ----
     let numeroFacture = "";
-    const VAL = "([A-Za-z0-9][A-Za-z0-9\\-\\/\\._]{1,})";
+    const VAL = "([A-Za-z0-9][A-Za-z0-9\\-\\/\\._ ]{1,})";
     const numPatterns = [
+      new RegExp("r[ée]f[ée]rence\\s*facture\\s*[:#]?\\s*" + VAL, "i"),
       new RegExp("n[°o]\\s*(?:de\\s*)?facture\\s*[:#]?\\s*" + VAL, "i"),
       new RegExp("num[ée]ro\\s*(?:de\\s*)?facture\\s*[:#]?\\s*" + VAL, "i"),
       new RegExp("facture\\s*(?:n[°o]|num[ée]ro)?\\s*[:#]?\\s*" + VAL, "i"),
       new RegExp("invoice\\s*(?:n[°o]|number|#|:)?\\s*[:#]?\\s*" + VAL, "i"),
-      new RegExp("\\bn[°o]\\s*[:#]?\\s*" + VAL, "i"),
+      new RegExp("\\bn[°o]\\s*[:#]?\\s*([0-9][0-9\\-\\/\\. ]{2,})", "i"),
     ];
     const stop = /^(date|tva|ttc|ht|du|le|la|de|et|siret|siren)$/i;
     for (const re of numPatterns) {
       const m = t.match(re);
-      if (m && m[1] && !stop.test(m[1]) && /\d/.test(m[1])) { numeroFacture = m[1].replace(/[.\s,;]+$/, ""); break; }
+      if (m && m[1]) {
+        let val = m[1].replace(/\s+/g, "").replace(/[.\-\/]+$/, "");
+        if (val && !stop.test(val) && /\d/.test(val) && val.length >= 2) { numeroFacture = val.slice(0, 24); break; }
+      }
     }
 
-    // ----- Montants -----
-    let ttc = montantApresMot(t, "total\\s*ttc|net\\s*[àa]\\s*payer|montant\\s*ttc|total\\s*t\\.?t\\.?c");
-    let ht = montantApresMot(t, "total\\s*ht|montant\\s*ht|total\\s*h\\.?t|sous[- ]?total");
-    let tva = montantApresMot(t, "t\\.?v\\.?a\\.?|montant\\s*tva", true);
-    const tauxM = t.match(/(\d{1,2}(?:[.,]\d)?)\s*%/);
-    let taux = tauxM ? parseMontant(tauxM[1]) : 20;
+    // ---- TVA / montants ----
+    const tvaNonAppl = /tva\s+non\s+applicable|art(?:icle)?\.?\s*293\s*b|exon[ée]ration\s+de\s+tva/i.test(t);
+    let ttc = montantApresMot(t, "total\\s*ttc|net\\s*[àa]\\s*payer|montant\\s*ttc|total\\s*t\\.?t\\.?c|reste\\s*d[ûu]");
+    let ht = montantApresMot(t, "total\\s*ht|montant\\s*ht|total\\s*h\\.?t");
+    let tva = montantApresMot(t, "total\\s*tva|t\\.?v\\.?a\\.?\\s*\\(?\\d|montant\\s*tva", true);
+    const tauxM = t.match(/tva[^%\d]{0,8}(\d{1,2}(?:[.,]\d)?)\s*%|(\d{1,2})\s*%/i);
+    let taux = tvaNonAppl ? 0 : (tauxM ? parseMontant(tauxM[1] || tauxM[2]) : 20);
+
     const montants = tousMontants(t).sort((a, b) => a - b);
     if (ttc == null && montants.length) ttc = montants[montants.length - 1];
-    if (ht == null && ttc != null) ht = Math.round((ttc / (1 + taux / 100)) * 100) / 100;
-    if (tva == null && ht != null && ttc != null) tva = Math.round((ttc - ht) * 100) / 100;
-    if (ht != null && taux && tva == null) tva = Math.round((ht * taux / 100) * 100) / 100;
+    if (tvaNonAppl) {
+      if (ht == null && ttc != null) ht = ttc;
+      if (ttc == null && ht != null) ttc = ht;
+      tva = 0;
+    } else {
+      if (ht == null && ttc != null && tva != null) ht = Math.round((ttc - tva) * 100) / 100;
+      if (ht == null && ttc != null) ht = Math.round((ttc / (1 + taux / 100)) * 100) / 100;
+      if (tva == null && ht != null && ttc != null) tva = Math.round((ttc - ht) * 100) / 100;
+      if (tva == null && ht != null) tva = Math.round((ht * taux / 100) * 100) / 100;
+      if (ttc == null && ht != null) ttc = Math.round((ht + (tva || 0)) * 100) / 100;
+    }
 
     const dates = findDates(t);
 
@@ -291,6 +324,7 @@ PNG.ocr = (function () {
       siret: siretFournisseur,
       siren: sirenFournisseur,
       siretDestinataire: siretNous,
+      societeHint: societeHint,
       dateFacture: dates[0] || null,
       montantHT: ht, montantTVA: tva, montantTTC: ttc, tauxTva: taux,
       texteBrut: t.slice(0, 4000),
