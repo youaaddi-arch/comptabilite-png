@@ -53,6 +53,35 @@ PNG.ocr = (function () {
   }
 
   /* Rend la 1re page d'un PDF dans un canvas -> dataURL image (haute résolution) */
+  /* Extrait le TEXTE NATIF d'un PDF numérique (couche texte) — exact à 100%,
+   * sans OCR. Renvoie "" si le PDF est un scan (pas de couche texte). */
+  async function pdfExtractText(file) {
+    setupPdf();
+    if (!window.pdfjsLib) return "";
+    try {
+      const buf = await file.arrayBuffer();
+      const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+      let out = "";
+      const nb = Math.min(pdf.numPages, 3);
+      for (let p = 1; p <= nb; p++) {
+        const page = await pdf.getPage(p);
+        const tc = await page.getTextContent();
+        // reconstruit les lignes en regroupant par position verticale
+        const lignes = {};
+        tc.items.forEach((it) => {
+          if (!it.str) return;
+          const y = Math.round(it.transform[5]);
+          (lignes[y] = lignes[y] || []).push({ x: it.transform[4], s: it.str });
+        });
+        Object.keys(lignes).map(Number).sort((a, b) => b - a).forEach((y) => {
+          const ligne = lignes[y].sort((a, b) => a.x - b.x).map((o) => o.s).join(" ");
+          out += ligne.replace(/\s{2,}/g, " ").trim() + "\n";
+        });
+      }
+      return out.trim();
+    } catch (e) { return ""; }
+  }
+
   async function pdfToImage(file) {
     setupPdf();
     if (!window.pdfjsLib) throw new Error("PDF.js indisponible");
@@ -380,6 +409,19 @@ PNG.ocr = (function () {
     const cfg = getConfig();
     const engine = cfg.engine || "ocrspace";
 
+    // 0) PDF NUMÉRIQUE : on lit la couche texte native (exact, sans OCR).
+    if (isPdf) {
+      if (onProgress) onProgress(0.15, "Lecture du texte du PDF…");
+      const texteNatif = await pdfExtractText(file);
+      // un PDF numérique a généralement > 60 caractères de texte réel
+      if (texteNatif && texteNatif.replace(/\s/g, "").length > 60) {
+        const champs = parseFacture(texteNatif, null, 0, 0);
+        champs.moteur = "PDF texte (exact)";
+        if (onProgress) onProgress(1, "Terminé");
+        return { apercu: apercu, champs: champs, moteur: "PDF texte (exact)" };
+      }
+    }
+
     // 1) Mindee : extraction structurée directe
     if (engine === "mindee") {
       try {
@@ -443,5 +485,5 @@ PNG.ocr = (function () {
     return txt;
   }
 
-  return { dispo, analyser, parseFacture, pdfToImage, imageToText, ocrZone, getConfig, setConfig };
+  return { dispo, analyser, parseFacture, pdfToImage, imageToText, ocrZone, getConfig, setConfig, pdfExtractText };
 })();
