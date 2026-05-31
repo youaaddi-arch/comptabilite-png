@@ -46,8 +46,8 @@ PNG.views = (function () {
     const st = x.statutPaiement || "a_payer";
     const statutOpt = [
       ["a_payer", "🟠 À payer"],
-      ["paye_attente", "🔵 Payé — à vérifier"],
-      ["paye_verifie", "🟢 Payé · vérifié / rapproché"],
+      ["paye_attente", "🔵 À vérifier"],
+      ["paye_verifie", "🟢 Payée"],
     ].map(([v, lbl]) => `<option value="${v}" ${v === st ? "selected" : ""}>${lbl}</option>`).join("");
     const besoinMode = (st === "paye_attente" || st === "paye_verifie");
     return `

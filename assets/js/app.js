@@ -331,7 +331,7 @@
       const mode = (document.getElementById("selMode") || {}).value || "";
       const date = (document.getElementById("selDatePaie") || {}).value || undefined;
       S.definirStatutPaiement(id, statut, mode, date);
-      const lbl = { a_payer: "À payer", paye_attente: "Payé · à vérifier", paye_verifie: "Payé · vérifié" }[statut];
+      const lbl = { a_payer: "À payer", paye_attente: "À vérifier", paye_verifie: "Payée" }[statut];
       toast("Statut : " + lbl + " ✓", "#059669");
       openModal(id); render(); return;
     }

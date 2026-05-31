@@ -149,9 +149,9 @@ PNG.utils = (function () {
 
   /* Libellés de statut de rapprochement / paiement */
   const STATUT_PAIEMENT = {
-    a_payer:     { label: "À payer",            cls: "bg-amber-100 text-amber-700" },
-    paye_attente:{ label: "Payé (à vérifier)",  cls: "bg-blue-100 text-blue-700" },
-    paye_verifie:{ label: "Payé · rapproché",   cls: "bg-emerald-100 text-emerald-700" },
+    a_payer:     { label: "À payer",     cls: "bg-amber-100 text-amber-700" },
+    paye_attente:{ label: "À vérifier",  cls: "bg-blue-100 text-blue-700" },
+    paye_verifie:{ label: "Payée",       cls: "bg-emerald-100 text-emerald-700" },
   };
 
   return {
