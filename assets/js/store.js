@@ -111,26 +111,48 @@ PNG.store = (function () {
   }
 
   // Enrichit une facture via data.gouv. Priorité au SIRET/SIREN lu sur la
-  // facture (raison sociale officielle), sinon recherche par nom.
-  // Si corrigerNom=true, remplace le nom OCR par la raison sociale officielle.
+  // facture ; SINON recherche par NOM (avec contrôle de similarité pour éviter
+  // d'attribuer un mauvais SIREN). corrigerNom=true autorise à remplacer le nom.
   async function enrichirSiren(factureId, corrigerNom) {
     ensureShape();
     const f = state.factures.find((x) => x.id === factureId);
     if (!f) return null;
-    const r = await U.lookupEntreprise(f.fournisseur, { siret: f.fournisseurSiret, siren: f.fournisseurSiren });
+    const aIdentifiant = (f.fournisseurSiret && String(f.fournisseurSiret).replace(/\D/g, "").length === 14)
+      || (f.fournisseurSiren && String(f.fournisseurSiren).replace(/\D/g, "").length === 9);
+    // nom nettoyé pour la recherche (sans forme juridique / mentions)
+    const nomRecherche = (f.fournisseur || "")
+      .replace(/\b(SARL|SASU|SAS|EURL|SCI|SNC|SA|EI|SARLU|SAS au capital[^,]*)\b/gi, "")
+      .replace(/\s{2,}/g, " ").trim();
+    if (!aIdentifiant && nomRecherche.length < 3) return { found: false, raison: "ni SIREN ni nom exploitable" };
+
+    const r = await U.lookupEntreprise(nomRecherche || f.fournisseur, { siret: f.fournisseurSiret, siren: f.fournisseurSiren });
     if (r.found) {
-      const ancienNom = f.fournisseur;
-      f.fournisseurSiren = r.siren; f.fournisseurSiret = r.siret;
-      f.fournisseurNaf = r.naf; f.fournisseurAdresse = r.adresse;
-      f.fournisseurSource = r.source;
-      // Corrige l'orthographe du fournisseur si identifié de façon fiable (par SIRET/SIREN)
-      if ((corrigerNom || r.parSiret) && r.nom && r.nom.length > 1) {
-        f.fournisseur = r.nom;
-        f.driveUrl = PNG.drive.path(f.societeId, f.fournisseur, f.fichier);
+      // Si on a cherché par NOM (pas d'identifiant sur la facture), on contrôle
+      // que le nom trouvé ressemble vraiment au fournisseur (anti faux positif).
+      let fiable = aIdentifiant || r.parSiret;
+      if (!fiable && r.nom) {
+        const norm = (s) => s.toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+        const a = norm(nomRecherche), b = norm(r.nom);
+        // fiable si l'un contient l'autre, ou s'ils partagent les 2 premiers mots
+        const motsA = a.split(" ").slice(0, 2).join(" ");
+        fiable = b.indexOf(a) >= 0 || a.indexOf(b) >= 0 || (motsA.length > 4 && b.indexOf(motsA) >= 0);
       }
-      upsertFournisseur(f);
-      log("Fournisseur identifié (data.gouv)", `${ancienNom} → ${r.nom} (SIREN ${r.siren})${r.parSiret ? " [via SIRET/SIREN]" : ""}`);
-      save();
+      if (fiable) {
+        const ancienNom = f.fournisseur;
+        f.fournisseurSiren = r.siren; f.fournisseurSiret = r.siret;
+        f.fournisseurNaf = r.naf; f.fournisseurAdresse = r.adresse;
+        f.fournisseurSource = r.source;
+        if ((corrigerNom || r.parSiret) && r.nom && r.nom.length > 1) {
+          f.fournisseur = r.nom;
+          f.driveUrl = PNG.drive.path(f.societeId, f.fournisseur, f.fichier);
+        }
+        upsertFournisseur(f);
+        log("Fournisseur identifié (data.gouv)", `${ancienNom} → ${r.nom} (SIREN ${r.siren})${aIdentifiant || r.parSiret ? " [via SIRET/SIREN]" : " [via nom]"}`);
+        save();
+        return r;
+      }
+      // résultat trouvé mais nom trop différent : on ne force rien
+      return { found: false, raison: "résultat incertain (nom différent) — à confirmer", candidat: r };
     }
     return r;
   }
