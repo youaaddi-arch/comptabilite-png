@@ -912,5 +912,38 @@ PNG.views = (function () {
     </button>`).join("");
   }
 
-  return { dashboard, dashboardCharts, factures, factureModal, collecte, banque, tvaView, financements, societes, plan, fonctionnalites, registre, aReglerView, fournisseurs, mobileModal, rapproManuelModal, nouveauFournModal, renderFournResults };
+  /* ===================== RÉGLAGES OCR ============================= */
+  function ocrSettings() {
+    var cfg = (PNG.ocr && PNG.ocr.getConfig) ? PNG.ocr.getConfig() : { engine: "ocrspace", ocrspaceKey: "", mindeeKey: "" };
+    var opt = function (val, label, desc) {
+      var sel = cfg.engine === val;
+      return '<label class="flex items-start gap-3 border-2 ' + (sel ? "border-blue-400 bg-blue-50" : "border-slate-200") + ' rounded-xl p-3 cursor-pointer mb-2">' +
+        '<input type="radio" name="ocrEngine" value="' + val + '" ' + (sel ? "checked" : "") + ' class="mt-1">' +
+        '<span><span class="font-medium text-slate-800">' + label + '</span><br><span class="text-xs text-slate-500">' + desc + '</span></span></label>';
+    };
+    return '' +
+      '<div class="mb-6"><h1 class="text-2xl font-bold text-slate-800">Réglages OCR</h1>' +
+      '<p class="text-slate-500 text-sm">Choisissez le moteur de reconnaissance des factures. Vos clés restent sur votre navigateur.</p></div>' +
+      '<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 max-w-2xl">' +
+        '<h3 class="text-xs font-semibold text-slate-400 uppercase mb-3">Moteur</h3>' +
+        opt("ocrspace", "OCR.space — gratuit, immédiat ✅", "Fonctionne tout de suite (clé démo). Pour plus de fiabilité, collez votre clé gratuite ci-dessous (25 000 pages/mois sur ocr.space).") +
+        opt("mindee", "Mindee — qualité maximale factures ⭐", "Extraction structurée (fournisseur, SIRET, n°, HT/TVA/TTC) et distingue fournisseur/client. Gratuit jusqu'à 250 factures/mois. Nécessite une clé API.") +
+        opt("tesseract", "Local (Tesseract) — hors-ligne", "Aucune connexion requise, mais qualité plus faible. À utiliser en dépannage.") +
+        '<h3 class="text-xs font-semibold text-slate-400 uppercase mb-2 mt-5">Clés API (optionnelles selon le moteur)</h3>' +
+        '<label class="block text-[11px] text-slate-400 mb-1">Clé OCR.space (laisser vide = clé démo)</label>' +
+        '<input id="ocrKeySpace" value="' + e(cfg.ocrspaceKey || "") + '" placeholder="ex: K81234567888957" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-3" />' +
+        '<label class="block text-[11px] text-slate-400 mb-1">Clé API Mindee</label>' +
+        '<input id="ocrKeyMindee" value="' + e(cfg.mindeeKey || "") + '" placeholder="votre clé Mindee" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4" />' +
+        '<div class="flex gap-2">' +
+          '<button id="btnSaveOcr" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">💾 Enregistrer</button>' +
+        '</div>' +
+        '<div class="mt-4 text-xs text-slate-500 bg-slate-50 rounded-lg p-3">' +
+          '<p class="font-medium text-slate-600 mb-1">Comment obtenir une clé gratuite ?</p>' +
+          '<p>• <strong>OCR.space</strong> : ocr.space/ocrapi → « Register for free API key ».</p>' +
+          '<p>• <strong>Mindee</strong> : mindee.com → compte gratuit → API Keys. Le moteur « Invoices » est inclus.</p>' +
+        '</div>' +
+      '</div>';
+  }
+
+  return { dashboard, dashboardCharts, factures, factureModal, collecte, banque, tvaView, financements, societes, plan, fonctionnalites, registre, aReglerView, fournisseurs, mobileModal, rapproManuelModal, nouveauFournModal, renderFournResults, ocrSettings };
 })();

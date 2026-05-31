@@ -16,6 +16,7 @@
     { route: "societes", label: "Sociétés", icon: "🏢" },
     { route: "plan", label: "Plan comptable", icon: "≣" },
     { route: "fonctionnalites", label: "Fonctionnalités", icon: "★" },
+    { route: "ocr", label: "Réglages OCR", icon: "⚙" },
   ];
 
   let current = { route: "dashboard", filter: null };
@@ -66,6 +67,7 @@
       case "societes": html = V.societes(); break;
       case "plan": html = V.plan(); break;
       case "fonctionnalites": html = V.fonctionnalites(); break;
+      case "ocr": html = V.ocrSettings(); break;
       default: html = V.dashboard();
     }
     view.innerHTML = html;
@@ -197,13 +199,11 @@
   function ocrOverlayClose() { const o = document.getElementById("ocrOverlay"); if (o) o.remove(); }
 
   async function traiterFichier(file) {
-    if (!PNG.ocr || !PNG.ocr.dispo()) {
-      toast("Module OCR non chargé (vérifiez la connexion internet)", "#dc2626");
-      return;
-    }
+    if (!PNG.ocr) { toast("Module OCR non chargé", "#dc2626"); return; }
     ocrOverlay("Lecture du fichier…", 0.05);
     try {
-      const { apercu, champs } = await PNG.ocr.analyser(file, (p, m) => ocrOverlay(m, p));
+      const res = await PNG.ocr.analyser(file, (p, m) => ocrOverlay(m, p));
+      const apercu = res.apercu, champs = res.champs;
       ocrOverlayClose();
       // société : celle filtrée si une est sélectionnée, sinon la 1re active
       const scope = S.getScope();
@@ -212,7 +212,7 @@
         fichier: file.name, apercu,
       });
       const c = PNG.utils.companyById(f.societeId);
-      toast(`Facture océrisée : ${f.fournisseur || "?"} → ${c ? c.code : "?"}`, "#059669");
+      toast(`OCR (${champs.moteur||"?"}) : ${f.fournisseur || "?"} → ${c ? c.code : "?"}`, "#059669");
       if (location.hash.slice(1).split("/")[0] !== "factures") location.hash = "#factures/a_saisir";
       render();
       setTimeout(() => openModal(f.id), 150);
@@ -235,7 +235,7 @@
 
   /* --------------------- Délégation d'événements ------------------- */
   document.addEventListener("click", (ev) => {
-    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-savefac],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#closeModal,#modalBack,#btnReset");
+    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-valider],[data-compta],[data-paye],[data-savefac],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#closeModal,#modalBack,#btnReset");
     if (!t) return;
 
     if (t.id === "modalBack" && ev.target.id === "modalBack") return closeModal();
@@ -353,6 +353,14 @@
     if (t.id === "btnAutoRappro") { const n = S.rapprochementAuto(); toast(n ? `${n} écriture(s) rapprochée(s) automatiquement ✓` : "Aucun rapprochement automatique possible", n ? "#059669" : "#64748b"); render(); return; }
     if (t.id === "btnSyncBanque") { const n = S.synchroniserBanque(); toast(`🔄 ${n} écriture(s) bancaire(s) remontée(s)`, "#0f172a"); render(); return; }
 
+    if (t.id === "btnSaveOcr") {
+      const engine = (document.querySelector('input[name="ocrEngine"]:checked') || {}).value || "ocrspace";
+      const ks = (document.getElementById("ocrKeySpace") || {}).value || "";
+      const km = (document.getElementById("ocrKeyMindee") || {}).value || "";
+      if (PNG.ocr && PNG.ocr.setConfig) PNG.ocr.setConfig({ engine: engine, ocrspaceKey: ks.trim(), mindeeKey: km.trim() });
+      toast("Réglages OCR enregistrés ✓ (moteur : " + engine + ")", "#059669");
+      return;
+    }
     if (t.id === "btnReset") { if (confirm("Réinitialiser toutes les données de démonstration ?")) { S.reset(); toast("Données réinitialisées", "#64748b"); render(); } return; }
   });
 

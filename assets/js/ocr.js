@@ -268,20 +268,154 @@ PNG.ocr = (function () {
     };
   }
 
+  /* ============================ MOTEURS OCR ===========================
+   * Réglages persistants : moteur choisi + clés API (stockés sur le navigateur).
+   *  - "ocrspace"  : OCR.space (gratuit, marche sans inscription via la clé démo)
+   *  - "mindee"    : Mindee (extraction structurée factures, clé gratuite requise)
+   *  - "tesseract" : OCR local (secours, sans réseau)
+   * ------------------------------------------------------------------- */
+  const CFG_KEY = "compta-png-ocr-cfg";
+  function getConfig() {
+    var def = { engine: "ocrspace", ocrspaceKey: "", mindeeKey: "" };
+    try { return Object.assign(def, JSON.parse(localStorage.getItem(CFG_KEY) || "{}")); }
+    catch (e) { return def; }
+  }
+  function setConfig(c) {
+    var cur = getConfig();
+    try { localStorage.setItem(CFG_KEY, JSON.stringify(Object.assign(cur, c))); } catch (e) {}
+  }
+
+  function fileToBase64(file) {
+    return new Promise(function (res, rej) {
+      var r = new FileReader();
+      r.onload = function () { res(String(r.result)); };
+      r.onerror = rej;
+      r.readAsDataURL(file);
+    });
+  }
+
+  /* ---- OCR.space : renvoie du texte, puis parseFacture l'analyse -------- */
+  async function ocrspaceText(file, onProgress) {
+    var cfg = getConfig();
+    var key = cfg.ocrspaceKey || "helloworld"; // clé démo si aucune fournie
+    if (onProgress) onProgress(0.2, "Envoi à OCR.space…");
+    // OCR.space limite la taille ; pour un PDF on envoie le PDF directement
+    var fd = new FormData();
+    fd.append("apikey", key);
+    fd.append("language", "fre");
+    fd.append("OCREngine", "2");
+    fd.append("scale", "true");
+    fd.append("isTable", "true");
+    fd.append("file", file);
+    var resp = await fetch("https://api.ocr.space/parse/image", { method: "POST", body: fd });
+    if (!resp.ok) throw new Error("OCR.space HTTP " + resp.status);
+    var data = await resp.json();
+    if (data.IsErroredOnProcessing) throw new Error((data.ErrorMessage && data.ErrorMessage[0]) || "Erreur OCR.space");
+    var pr = (data.ParsedResults && data.ParsedResults[0]) || {};
+    if (onProgress) onProgress(0.9, "Analyse des champs…");
+    return pr.ParsedText || "";
+  }
+
+  /* ---- Mindee : extraction STRUCTURÉE des champs de facture ------------- */
+  function mindeeVal(f) { return f && (f.value != null ? f.value : (f.content != null ? f.content : null)); }
+  async function mindeeAnalyse(file, onProgress) {
+    var cfg = getConfig();
+    if (!cfg.mindeeKey) throw new Error("Clé API Mindee manquante (réglages OCR)");
+    if (onProgress) onProgress(0.2, "Envoi à Mindee…");
+    var fd = new FormData();
+    fd.append("document", file);
+    var resp = await fetch("https://api.mindee.net/v1/products/mindee/invoices/v4/predict", {
+      method: "POST",
+      headers: { "Authorization": "Token " + cfg.mindeeKey },
+      body: fd,
+    });
+    if (resp.status === 401) throw new Error("Clé Mindee invalide");
+    if (!resp.ok) throw new Error("Mindee HTTP " + resp.status);
+    var data = await resp.json();
+    var p = data && data.document && data.document.inference && data.document.inference.prediction;
+    if (!p) throw new Error("Réponse Mindee inattendue");
+    if (onProgress) onProgress(0.92, "Lecture des champs…");
+
+    // SIRET / n° TVA fournisseur
+    var siret = "", siren = "";
+    (p.supplier_company_registrations || []).forEach(function (r) {
+      if (r.type === "SIRET" && r.value) siret = String(r.value).replace(/\D/g, "");
+      if (r.type === "SIREN" && r.value && !siren) siren = String(r.value).replace(/\D/g, "");
+    });
+    if (!siren && siret) siren = siret.slice(0, 9);
+
+    var taxes = p.taxes || [];
+    var tva = taxes.length ? taxes.reduce(function (s, t) { return s + (t.value || 0); }, 0) : null;
+    var taux = taxes.length && taxes[0].rate ? taxes[0].rate : 20;
+    var ht = mindeeVal(p.total_net);
+    var ttc = mindeeVal(p.total_amount);
+    if (tva == null && p.total_tax) tva = mindeeVal(p.total_tax);
+
+    // date au format ISO déjà fourni par Mindee
+    var dateF = mindeeVal(p.date) || mindeeVal(p.invoice_date) || null;
+
+    var champs = {
+      fournisseur: mindeeVal(p.supplier_name) || "",
+      numeroFacture: mindeeVal(p.invoice_number) || "",
+      siret: siret, siren: siren,
+      siretDestinataire: "",                 // Mindee donne aussi customer, non nécessaire ici
+      dateFacture: dateF,
+      montantHT: ht, montantTVA: tva, montantTTC: ttc,
+      tauxTva: taux,
+      clientNom: mindeeVal(p.customer_name) || "",
+      texteBrut: "",
+      moteur: "Mindee",
+    };
+    if (champs.montantHT == null && champs.montantTTC != null) champs.montantHT = Math.round((champs.montantTTC / (1 + taux / 100)) * 100) / 100;
+    if (champs.montantTVA == null && champs.montantHT != null && champs.montantTTC != null) champs.montantTVA = Math.round((champs.montantTTC - champs.montantHT) * 100) / 100;
+    return champs;
+  }
+
   /* Pipeline complet : fichier -> aperçu + texte + champs extraits */
   async function analyser(file, onProgress) {
     const isPdf = /pdf$/i.test(file.type) || /\.pdf$/i.test(file.name);
     if (onProgress) onProgress(0.05, isPdf ? "Lecture du PDF…" : "Lecture de l'image…");
-    const rawURL = isPdf ? await pdfToImage(file) : await fileToDataURL(file);
-    if (onProgress) onProgress(0.12, "Amélioration de l'image…");
-    const procURL = await preprocess(rawURL);
-    if (onProgress) onProgress(0.2, "Océrisation en cours…");
-    const data = await imageToData(procURL, (p) => onProgress && onProgress(0.2 + p * 0.7, "Océrisation… " + Math.round(p * 100) + "%"));
-    if (onProgress) onProgress(0.95, "Analyse des champs…");
+    // aperçu affichable (image) — pour PDF on rend la 1re page
+    const apercu = isPdf ? await pdfToImage(file) : await fileToDataURL(file);
+    const cfg = getConfig();
+    const engine = cfg.engine || "ocrspace";
+
+    // 1) Mindee : extraction structurée directe
+    if (engine === "mindee") {
+      try {
+        const champs = await mindeeAnalyse(file, onProgress);
+        if (onProgress) onProgress(1, "Terminé");
+        return { apercu: apercu, champs: champs, moteur: "Mindee" };
+      } catch (e) {
+        if (onProgress) onProgress(0.3, "Mindee indisponible, secours OCR.space…");
+        // bascule vers OCR.space
+      }
+    }
+
+    // 2) OCR.space : texte -> parseFacture
+    if (engine === "ocrspace" || engine === "mindee") {
+      try {
+        const texte = await ocrspaceText(file, onProgress);
+        if (texte && texte.trim().length > 0) {
+          const champs = parseFacture(texte, null, 0, 0);
+          champs.moteur = "OCR.space";
+          if (onProgress) onProgress(1, "Terminé");
+          return { apercu: apercu, champs: champs, moteur: "OCR.space" };
+        }
+      } catch (e) {
+        if (onProgress) onProgress(0.3, "OCR.space indisponible, secours local…");
+      }
+    }
+
+    // 3) Secours : Tesseract local
+    if (onProgress) onProgress(0.35, "Amélioration de l'image…");
+    const procURL = await preprocess(apercu);
+    if (onProgress) onProgress(0.4, "Océrisation locale…");
+    const data = await imageToData(procURL, (p) => onProgress && onProgress(0.4 + p * 0.55, "Océrisation locale… " + Math.round(p * 100) + "%"));
     const champs = parseFacture(data.texte, data.mots, data.largeur, data.hauteur);
+    champs.moteur = "Local (Tesseract)";
     if (onProgress) onProgress(1, "Terminé");
-    // aperçu = image d'origine (lisible), pas la version prétraitée
-    return { apercu: rawURL, champs };
+    return { apercu: apercu, champs: champs, moteur: "Local (Tesseract)" };
   }
 
   /* OCR d'une ZONE de l'aperçu. imgEl = <img>, rect = {x,y,w,h} en pixels
@@ -309,5 +443,5 @@ PNG.ocr = (function () {
     return txt;
   }
 
-  return { dispo, analyser, parseFacture, pdfToImage, imageToText, ocrZone };
+  return { dispo, analyser, parseFacture, pdfToImage, imageToText, ocrZone, getConfig, setConfig };
 })();
