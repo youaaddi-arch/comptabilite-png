@@ -255,6 +255,15 @@ PNG.ocr = (function () {
     return candidates.length ? reparerEspaces(candidates[0].txt).slice(0, 60) : "";
   }
 
+  // Nettoie un nom de société : coupe avant l'adresse / le SIRET / la virgule
+  function nettoyerNomFournisseur(l) {
+    var v = reparerEspaces(l || "");
+    v = v.split(/\s+\d{1,4}\s+(?:rue|av|avenue|bld|boulevard|chemin|sentier|impasse|place|route|all[ée]e|quai)\b/i)[0];
+    v = v.split(/\b(?:SIRET|SIREN|APE|RCS|TVA|IBAN|BIC|RIB|T[ée]l|www|http|capital)\b/i)[0];
+    v = v.split(/,/)[0];
+    return v.replace(/\s{2,}/g, " ").replace(/[\s,;:-]+$/, "").trim().slice(0, 60);
+  }
+
   function parseFacture(texte, mots, W, H) {
     const t = (texte || "").replace(/ /g, " ");
     const upper = t.toUpperCase();
@@ -297,43 +306,41 @@ PNG.ocr = (function () {
     let sirenFournisseur = siretFournisseur ? siretFournisseur.slice(0, 9) : "";
     if (!sirenFournisseur && sirenLabel && !nos.has(sirenLabel[1])) sirenFournisseur = sirenLabel[1];
 
-    // ---- Fournisseur (nom) : par position si dispo, sinon heuristique texte ----
+    // ---- Fournisseur (nom) : par position si dispo, sinon 1re ligne d'en-tête ----
     let fournisseur = fournisseurParPosition(mots, W, H);
     if (!fournisseur) {
-      // cherche une ligne "société" plausible : contient forme juridique, ou
-      // proche d'un SIRET, en excluant nos sociétés et le charabia technique.
       const candidate = lignes.filter((l) => {
         if (JUNK.test(l)) return false;
-        if (estNotreSociete(l)) return false;
-        if (/facture|invoice|devis|^date|^n[°o]\b|siret|siren|tva|iban|bic|rib|t[ée]l|@|www|http|code|page|\bque?\b/i.test(l)) return false;
-        if (/^[\d\s.,€%\/-]+$/.test(l)) return false;
-        if (!/[A-Za-zÀ-ÿ]{3}/.test(l)) return false;
+        if (estNotreSociete(l)) return false;                       // jamais notre société
+        if (/facture|invoice|devis|^date|^n[\u00b0o]\b|siret|siren|tva|iban|bic|rib|t[\u00e9e]l|@|www|http|^code|page|\bque?\b/i.test(l)) return false;
+        if (/\bcapital\b|\brcs\b|\bnaf\b|\bape\b|au capital|r\.c\.s|p[\u00e9e]nalit|escompte|condition|r[\u00e8e]glement|\bd[\u00e9e]lai\b|si[\u00e8e]ge|tva intra|identifiant/i.test(l)) return false;
+        if (/^\d/.test(l)) return false;                            // commence par chiffre = adresse/montant
+        if (/^[\d\s.,\u20ac%\/-]+$/.test(l)) return false;
+        if (!/[A-Za-z\u00c0-\u00ff]{3}/.test(l)) return false;
         return true;
       });
-      // priorité : ligne avec forme juridique (SARL/SAS…)
-      let best = candidate.find((l) => /\b(SARL|SASU|SAS|EURL|SCI|SNC|SA|EI)\b/i.test(l));
-      if (!best) best = candidate[0];
-      fournisseur = best ? reparerEspaces(best).replace(/[,;].*$/, "").slice(0, 60) : "";
+      const best = candidate[0];                                     // nom = 1re ligne d'en-tête
+      fournisseur = best ? nettoyerNomFournisseur(best) : "";
     }
 
     // ---- N° de facture : UNIQUEMENT après une mention explicite ----
     let numeroFacture = "";
     const VAL = "([A-Za-z0-9][A-Za-z0-9\\-\\/\\._ ]{1,})";
     const numPatterns = [
-      new RegExp("r[ée]f[ée]rence\\s*(?:de\\s*)?facture\\s*[:#]?\\s*" + VAL, "i"),
-      new RegExp("num[ée]ro\\s*(?:de\\s*)?facture\\s*[:#]?\\s*" + VAL, "i"),
-      new RegExp("n[°ºo]\\s*(?:de\\s*)?facture\\s*[:#]?\\s*" + VAL, "i"),
-      new RegExp("facture\\s*n[°ºo]\\s*[:#]?\\s*" + VAL, "i"),
+      new RegExp("r[\u00e9e]f[\u00e9e]rence\\s*(?:de\\s*)?facture\\s*[:#]?\\s*" + VAL, "i"),
+      new RegExp("num[\u00e9e]ro\\s*(?:de\\s*)?facture\\s*[:#]?\\s*" + VAL, "i"),
+      new RegExp("n[\u00b0\u00bao]\\s*(?:de\\s*)?facture\\s*[:#]?\\s*" + VAL, "i"),
+      new RegExp("facture\\s*n[\u00b0\u00bao]?\\s*[:#]?\\s*" + VAL, "i"),
       new RegExp("facture\\s*[:#]\\s*" + VAL, "i"),
-      new RegExp("invoice\\s*(?:n[°ºo]?|number|#)\\s*[:#]?\\s*" + VAL, "i"),
-      new RegExp("\\bn[°º]\\s*[:#]?\\s*([0-9][0-9\\-\\/\\. ]{1,})", "i"),
+      new RegExp("invoice\\s*(?:n[\u00b0\u00bao]?|number|#)\\s*[:#]?\\s*" + VAL, "i"),
+      new RegExp("\\bn[\u00b0\u00ba]\\s*[:#]?\\s*([0-9][0-9\\-\\/\\. ]{1,})", "i"),
     ];
     const stop = /^(date|tva|ttc|ht|du|le|la|de|et|siret|siren|euro|eur)$/i;
     for (const re of numPatterns) {
       const m = t.match(re);
       if (m && m[1]) {
         let val = m[1].replace(/\s+/g, "").replace(/[.\-\/]+$/, "");
-        val = val.replace(/^[nN][°ºo]?(?=\d)/, "");
+        val = val.replace(/^[nN][\u00b0\u00bao]?(?=\d)/, "");
         if (val && !stop.test(val) && /\d/.test(val) && val.length >= 2) { numeroFacture = val.slice(0, 24); break; }
       }
     }
