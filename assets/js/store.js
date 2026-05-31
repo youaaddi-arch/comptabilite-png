@@ -125,7 +125,7 @@ PNG.store = (function () {
       .replace(/\s{2,}/g, " ").trim();
     if (!aIdentifiant && nomRecherche.length < 3) return { found: false, raison: "ni SIREN ni nom exploitable" };
 
-    const r = await U.lookupEntreprise(nomRecherche || f.fournisseur, { siret: f.fournisseurSiret, siren: f.fournisseurSiren });
+    const r = await U.lookupEntreprise(nomRecherche || f.fournisseur, { siret: f.fournisseurSiret, siren: f.fournisseurSiren, adresse: f.fournisseurAdresse || f.adresseFournisseur || "" });
     if (r.found) {
       // Si on a cherché par NOM (pas d'identifiant sur la facture), on contrôle
       // que le nom trouvé ressemble vraiment au fournisseur (anti faux positif).

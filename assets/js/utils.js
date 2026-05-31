@@ -89,20 +89,46 @@ PNG.utils = (function () {
   async function lookupEntreprise(query, opts) {
     opts = opts || {};
     if (typeof fetch !== "function") return { found: false, raison: "fetch indisponible" };
-    // priorité : SIRET (14) > SIREN (9) > nom
     const siret = (opts.siret || "").replace(/\D/g, "");
     const siren = (opts.siren || "").replace(/\D/g, "");
+    const parId = siret.length === 14 || siren.length === 9;
     const q = siret.length === 14 ? siret : siren.length === 9 ? siren : query;
     if (!q) return { found: false, raison: "aucun critère" };
+    // code postal éventuel extrait de l'adresse OCR (pour départager les homonymes)
+    const cp = ((opts.adresse || "").match(/\b(\d{5})\b/) || [])[1] || "";
     try {
       const ctrl = new AbortController();
-      const to = setTimeout(() => ctrl.abort(), 7000);
-      const res = await fetch(PNG.dataGouv.url(q), { signal: ctrl.signal });
+      const to = setTimeout(() => ctrl.abort(), 8000);
+      // par identifiant : 1 résultat ; par nom : plusieurs pour choisir via l'adresse
+      const url = parId ? PNG.dataGouv.url(q) : PNG.dataGouv.urlMulti(q, 10);
+      const res = await fetch(url, { signal: ctrl.signal });
       clearTimeout(to);
       if (!res.ok) return { found: false, raison: "HTTP " + res.status };
       const data = await res.json();
-      const r = data && data.results && data.results[0];
-      if (!r) return { found: false, raison: "aucun résultat" };
+      const liste = (data && data.results) || [];
+      if (!liste.length) return { found: false, raison: "aucun résultat" };
+
+      // choix du meilleur résultat : si recherche par nom + adresse, on prend
+      // celui dont le code postal (ou la ville) correspond à l'adresse OCR.
+      let r = liste[0];
+      if (!parId && (cp || opts.adresse)) {
+        const adrU = (opts.adresse || "").toUpperCase();
+        let best = null, bestScore = -1;
+        liste.forEach((c) => {
+          const s = c.siege || {};
+          const a = (s.adresse || s.geo_adresse || "").toUpperCase();
+          let sc = 0;
+          if (cp && a.indexOf(cp) >= 0) sc += 5;                 // même code postal
+          if (cp && a.indexOf(cp.slice(0, 2)) >= 0) sc += 1;     // même département
+          // ville (mot après le code postal dans l'adresse OCR)
+          const ville = (adrU.match(/\d{5}\s+([A-ZÀ-Ÿ' -]{3,})/) || [])[1];
+          if (ville && a.indexOf(ville.trim()) >= 0) sc += 3;
+          if ((c.nombre_etablissements_ouverts || 0) > 0) sc += 0.5;
+          if (sc > bestScore) { bestScore = sc; best = c; }
+        });
+        if (best && bestScore >= 3) r = best;   // match adresse fiable
+      }
+
       const s = r.siege || {};
       return {
         found: true,
@@ -111,7 +137,8 @@ PNG.utils = (function () {
         nom: r.nom_complet || r.nom_raison_sociale || query,
         naf: r.activite_principale || s.activite_principale || "",
         adresse: s.adresse || s.geo_adresse || "",
-        parSiret: siret.length === 14 || siren.length === 9, // identifié de façon fiable
+        parSiret: parId,
+        parAdresse: !parId && cp ? true : false,
         source: "recherche-entreprises.api.gouv.fr",
       };
     } catch (err) {
