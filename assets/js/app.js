@@ -306,8 +306,21 @@
   document.getElementById("btnReset2") && document.getElementById("btnReset2").addEventListener("click", () => {});
 
   /* ------------------------------ Init ----------------------------- */
-  S.load();
-  S.subscribe(() => { /* re-render léger de la sidebar pour les badges */ renderSidebar(); });
-  render();
-  window.PNG._render = render;
+  // Démarrage protégé : si d'anciennes données cassent le rendu, on
+  // réinitialise automatiquement au lieu d'afficher une page blanche.
+  function safeRender() {
+    try { render(); }
+    catch (err) {
+      console.error("Rendu en échec, réinitialisation :", err);
+      try { S.reset(); render(); }
+      catch (e2) {
+        var v = document.getElementById("view");
+        if (v) v.innerHTML = '<div class="p-8 text-red-600">Erreur d\'affichage. Cliquez sur « Réinitialiser les données démo » en bas à gauche, ou videz le cache (Cmd+Shift+R).</div>';
+      }
+    }
+  }
+  try { S.load(); } catch (e) { try { S.reset(); } catch (e2) {} }
+  S.subscribe(() => { try { renderSidebar(); } catch (e) {} });
+  window.PNG._render = safeRender;
+  safeRender();
 })();
