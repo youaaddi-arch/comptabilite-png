@@ -237,7 +237,7 @@ PNG.views = (function () {
     return `
       ${scopeBanner()}
       <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
-        <div><h1 class="text-2xl font-bold text-slate-800">Factures fournisseurs</h1>
+        <div><h1 class="text-2xl font-bold text-slate-800">Factures à valider</h1>
         <p class="text-slate-500 text-sm">Toutes les factures remontent ici automatiquement : email, app mobile, saisie directe, récupération en ligne.</p></div>
         <div class="flex gap-2">
           <button id="btnSimEmail" class="bg-violet-600 hover:bg-violet-700 text-white px-3 py-2.5 rounded-xl text-sm font-medium shadow-sm" title="Simuler une facture reçue par email">✉️ Email</button>
