@@ -872,8 +872,8 @@ PNG.views = (function () {
     if (q) dossiers = dossiers.filter((fo) => [fo.nom, fo.siren, fo.siret, fo.compteCharge, fo.compteTiers, fo.categorie, fo.naf, fo.email, fo.adresse].join(" ").toLowerCase().includes(q));
 
     const rows = dossiers.map((fo) => `
-      <tr class="border-t border-slate-100 hover:bg-slate-50">
-        <td class="py-2.5 pl-3"><p class="text-sm font-medium text-slate-700">${e(fo.nom)}</p>
+      <tr class="border-t border-slate-100 hover:bg-blue-50 cursor-pointer" data-fourndetail="${e(fo.key)}">
+        <td class="py-2.5 pl-3"><p class="text-sm font-medium text-blue-700 hover:underline">${e(fo.nom)}</p>
           <p class="text-[10px] text-slate-400">${societeChip(fo.societeId)} · ${e(fo.categorie||"—")}</p></td>
         <td class="py-2.5 text-xs font-mono">${e(fo.siren||"—")}</td>
         <td class="py-2.5 text-center"><span class="font-mono text-xs">${e(fo.compteTiers||"—")}</span></td>
@@ -883,8 +883,8 @@ PNG.views = (function () {
         <td class="py-2.5 text-right text-sm text-emerald-600">${U.fmtEUR(fo.paye)}</td>
         <td class="py-2.5 text-right text-sm ${fo.aPayer>0?'text-red-600 font-medium':'text-slate-400'}">${U.fmtEUR(fo.aPayer)}</td>
         <td class="py-2.5 text-center">
-          <button data-editfourn="${e(fo.key)}" class="text-blue-600 hover:text-blue-800 text-xs" title="Modifier">✎</button>
-          <button data-suppfourn="${e(fo.key)}" class="text-red-400 hover:text-red-600 text-xs ml-1" title="Supprimer">🗑</button>
+          <button data-editfourn="${e(fo.key)}" onclick="event.stopPropagation()" class="text-blue-600 hover:text-blue-800 text-xs" title="Modifier">✎</button>
+          <button data-suppfourn="${e(fo.key)}" onclick="event.stopPropagation()" class="text-red-400 hover:text-red-600 text-xs ml-1" title="Supprimer">🗑</button>
         </td>
       </tr>`).join("");
     const T = dossiers.reduce((a, f) => ({ total: a.total + f.total, paye: a.paye + f.paye, aPayer: a.aPayer + f.aPayer }), { total:0, paye:0, aPayer:0 });
@@ -986,6 +986,110 @@ PNG.views = (function () {
         </div>
       </div>
     </div>`;
+  }
+
+  /* ===================== PAGE DÉTAIL FOURNISSEUR ================== */
+  function fournisseurDetail(key, periode) {
+    const fo = S.fournisseurDetail(key, periode || {});
+    if (!fo) return `<div class="p-8 text-slate-400">Fournisseur introuvable. <a href="#fournisseurs" class="text-blue-600">← Retour</a></div>`;
+    const d = (v) => v ? U.fmtDate(v) : `<span class="text-slate-300">—</span>`;
+    const moisOpts = [["", "Tous les mois"]].concat(
+      ["01","02","03","04","05","06","07","08","09","10","11","12"].map((m, i) =>
+        [m, ["Janv","Févr","Mars","Avr","Mai","Juin","Juil","Août","Sept","Oct","Nov","Déc"][i]])
+    ).map(([v, l]) => `<option value="${v}" ${(fo.periode.mois||"") === v ? "selected" : ""}>${l}</option>`).join("");
+    const anneeOpts = [["", "Toutes années"]].concat((fo.annees || []).map((a) => [a, a]))
+      .map(([v, l]) => `<option value="${v}" ${(fo.periode.annee||"") === v ? "selected" : ""}>${l}</option>`).join("");
+
+    const rows = fo.factures.map((x) => {
+      const sp = U.STATUT_PAIEMENT[x.statutPaiement] || U.STATUT_PAIEMENT.a_payer;
+      return `<tr class="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" data-open="${x.id}">
+        <td class="py-2.5 pl-3 text-sm">${e(x.numeroFacture)}</td>
+        <td class="py-2.5 text-xs">${d(x.dateFacture)}</td>
+        <td class="py-2.5 text-xs">${d(x.dateImport)}</td>
+        <td class="py-2.5 text-xs">${d(x.dateReglement || x.datePaiement)}</td>
+        <td class="py-2.5 text-right text-sm">${U.fmtEUR(x.montantHT)}</td>
+        <td class="py-2.5 text-right text-xs text-slate-500">${U.fmtEUR(x.montantTVA)}</td>
+        <td class="py-2.5 text-right text-sm font-medium">${U.fmtEUR(x.montantTTC)}</td>
+        <td class="py-2.5 text-center text-xs">${badge(sp.label, sp.cls)}</td>
+      </tr>`;
+    }).join("");
+
+    return `
+      <div class="mb-4"><a href="#fournisseurs" class="text-sm text-blue-600 hover:underline">← Tous les fournisseurs</a></div>
+      <div class="flex items-start justify-between mb-6 flex-wrap gap-3">
+        <div>
+          <h1 class="text-2xl font-bold text-slate-800">${e(fo.nom)}</h1>
+          <p class="text-slate-500 text-sm">${societeChip(fo.societeId)} · ${e(fo.categorie||"—")} ${fo.siren?`· SIREN ${e(fo.siren)}`:""} · compte tiers ${e(fo.compteTiers||"—")} · compte charge ${e(fo.compteCharge||"—")}</p>
+          ${fo.adresse?`<p class="text-xs text-slate-400 mt-1">${e(fo.adresse)}</p>`:""}
+        </div>
+        <div class="flex gap-2 items-center">
+          <select id="foDetailAnnee" data-key="${e(fo.key)}" class="border border-slate-200 rounded-lg px-3 py-2 text-sm">${anneeOpts}</select>
+          <select id="foDetailMois" data-key="${e(fo.key)}" class="border border-slate-200 rounded-lg px-3 py-2 text-sm">${moisOpts}</select>
+          <button data-editfourn="${e(fo.key)}" class="bg-white border border-slate-200 hover:bg-slate-50 px-3 py-2 rounded-lg text-sm">✎ Modifier</button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        ${kpiCard("Total facturé (TTC)", U.fmtEUR(fo.totalTTC), `${fo.nbFactures} facture(s) · HT ${U.fmtEUR(fo.totalHT)}`, "#0ea5e9", "▲")}
+        ${kpiCard("Déjà payé", U.fmtEUR(fo.paye), "réglé / en vérification", "#16a34a", "✓")}
+        ${kpiCard("Reste à payer", U.fmtEUR(fo.aPayer), "factures non réglées", "#dc2626", "€")}
+        ${kpiCard("TVA", U.fmtEUR(fo.totalTVA), "sur la période", "#db2777", "T")}
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 lg:col-span-2">
+          <h3 class="font-semibold text-slate-700 mb-1">Évolution ${fo.anneeSerie} — facturé / payé / à payer</h3>
+          <p class="text-xs text-slate-400 mb-3">par mois</p>
+          <canvas id="chartFournMois" height="110"></canvas>
+        </div>
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+          <h3 class="font-semibold text-slate-700 mb-3">Répartition</h3>
+          <canvas id="chartFournRepart" height="200"></canvas>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-x-auto">
+        <table class="w-full min-w-[760px]">
+          <thead><tr class="text-[11px] text-slate-400 text-left bg-slate-50">
+            <th class="font-medium py-2 pl-3">N° facture</th><th class="font-medium py-2">Date facture</th>
+            <th class="font-medium py-2">Date import</th><th class="font-medium py-2">Date paiement</th>
+            <th class="font-medium py-2 text-right">HT</th><th class="font-medium py-2 text-right">TVA</th><th class="font-medium py-2 text-right">TTC</th>
+            <th class="font-medium py-2 text-center">Statut</th>
+          </tr></thead>
+          <tbody>${rows || `<tr><td colspan="8" class="text-center py-8 text-slate-400">Aucune facture sur cette période</td></tr>`}</tbody>
+          <tfoot><tr class="border-t-2 border-slate-200 bg-slate-50 font-semibold text-sm">
+            <td class="py-2.5 pl-3" colspan="4">TOTAL (${fo.nbFactures})</td>
+            <td class="py-2.5 text-right">${U.fmtEUR(fo.totalHT)}</td><td class="py-2.5 text-right">${U.fmtEUR(fo.totalTVA)}</td><td class="py-2.5 text-right">${U.fmtEUR(fo.totalTTC)}</td><td></td>
+          </tr></tfoot>
+        </table>
+      </div>`;
+  }
+
+  // Graphiques de la page détail fournisseur (appelé après le rendu)
+  function fournisseurDetailCharts(key, periode) {
+    if (!window.Chart) return;
+    const fo = S.fournisseurDetail(key, periode || {});
+    if (!fo) return;
+    PNG._fcharts = PNG._fcharts || {};
+    Object.values(PNG._fcharts).forEach((c) => c && c.destroy());
+    PNG._fcharts = {};
+    const labels = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
+    const elM = document.getElementById("chartFournMois");
+    if (elM) PNG._fcharts.m = new Chart(elM, {
+      type: "bar",
+      data: { labels: labels, datasets: [
+        { label: "Facturé", data: fo.serie.map((s) => s.facture), backgroundColor: "#0ea5e9", borderRadius: 5 },
+        { label: "Payé", data: fo.serie.map((s) => s.paye), backgroundColor: "#16a34a", borderRadius: 5 },
+        { label: "À payer", data: fo.serie.map((s) => s.aPayer), backgroundColor: "#ef4444", borderRadius: 5 },
+      ] },
+      options: { responsive: true, plugins: { legend: { position: "bottom" } }, scales: { y: { beginAtZero: true } } },
+    });
+    const elR = document.getElementById("chartFournRepart");
+    if (elR) PNG._fcharts.r = new Chart(elR, {
+      type: "doughnut",
+      data: { labels: ["Payé", "À payer"], datasets: [{ data: [fo.paye, fo.aPayer], backgroundColor: ["#16a34a", "#ef4444"] }] },
+      options: { responsive: true, plugins: { legend: { position: "bottom" } } },
+    });
   }
 
   /* Modale de dépôt mobile (simulation du téléphone salarié) */
@@ -1142,5 +1246,5 @@ PNG.views = (function () {
       '</div>';
   }
 
-  return { dashboard, dashboardCharts, factures, factureModal, collecte, banque, tvaView, financements, societes, plan, fonctionnalites, registre, aReglerView, fournisseurs, fournDossierModal, importFournModal, mobileModal, rapproManuelModal, nouveauFournModal, renderFournResults, ocrSettings };
+  return { dashboard, dashboardCharts, factures, factureModal, collecte, banque, tvaView, financements, societes, plan, fonctionnalites, registre, aReglerView, fournisseurs, fournisseurDetail, fournisseurDetailCharts, fournDossierModal, importFournModal, mobileModal, rapproManuelModal, nouveauFournModal, renderFournResults, ocrSettings };
 })();

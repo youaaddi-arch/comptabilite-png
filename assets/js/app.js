@@ -23,7 +23,9 @@
 
   function parseHash() {
     const h = (location.hash || "#dashboard").slice(1);
-    const [route, filter] = h.split("/");
+    const slash = h.indexOf("/");
+    const route = slash >= 0 ? h.slice(0, slash) : h;
+    const filter = slash >= 0 ? decodeURIComponent(h.slice(slash + 1)) : null;
     return { route: route || "dashboard", filter: filter || null };
   }
 
@@ -61,6 +63,7 @@
       case "registre": html = V.registre(); break;
       case "regler": html = V.aReglerView(); break;
       case "fournisseurs": html = V.fournisseurs(); break;
+      case "fournisseur": html = V.fournisseurDetail(current.filter, PNG._foPeriode || {}); break;
       case "banque": html = V.banque(); break;
       case "tva": html = V.tvaView(); break;
       case "financements": html = V.financements(current.filter); break;
@@ -72,6 +75,7 @@
     }
     view.innerHTML = html;
     if (current.route === "dashboard") setTimeout(V.dashboardCharts, 30);
+    if (current.route === "fournisseur") setTimeout(() => V.fournisseurDetailCharts(current.filter, PNG._foPeriode || {}), 40);
     window.scrollTo(0, 0);
   }
 
@@ -267,7 +271,7 @@
 
   /* --------------------- Délégation d'événements ------------------- */
   document.addEventListener("click", (ev) => {
-    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-navfac],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-saisirstatut],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],[data-editfourn],[data-savefourndossier],[data-suppfourn],[data-newfourndossier],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#btnSaveOcr2,#btnTestGemini,#regReset,#btnImportFourn,#btnAddFourn,#fournImportConfirm,#closeModal,#modalBack,#btnReset");
+    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-navfac],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-saisirstatut],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],[data-editfourn],[data-savefourndossier],[data-suppfourn],[data-newfourndossier],[data-fourndetail],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#btnSaveOcr2,#btnTestGemini,#regReset,#btnImportFourn,#btnAddFourn,#fournImportConfirm,#closeModal,#modalBack,#btnReset");
     if (!t) return;
 
     if (t.id === "modalBack" && ev.target.id === "modalBack") return closeModal();
@@ -449,6 +453,7 @@
     // ---- Fournisseurs : éditer / enregistrer / supprimer / ajouter / importer ----
     if (t.dataset.editfourn) { ouvrirFournDossierModal(t.dataset.editfourn); return; }
     if (t.id === "btnAddFourn") { ouvrirFournDossierModal(null); return; }
+    if (t.dataset.fourndetail) { PNG._foPeriode = {}; location.hash = "#fournisseur/" + encodeURIComponent(t.dataset.fourndetail); return; }
     if (t.dataset.savefourndossier) {
       const key = t.dataset.savefourndossier;
       const v = (i) => { const el = document.getElementById(i); return el ? el.value : null; };
@@ -524,6 +529,8 @@
   document.addEventListener("change", (ev) => {
     const el = ev.target;
     if (REG_FILTER_IDS[el.id]) { PNG._regFiltre[REG_FILTER_IDS[el.id]] = el.value; render(); return; }
+    if (el.id === "foDetailAnnee") { PNG._foPeriode = Object.assign({}, PNG._foPeriode, { annee: el.value }); render(); return; }
+    if (el.id === "foDetailMois") { PNG._foPeriode = Object.assign({}, PNG._foPeriode, { mois: el.value }); render(); return; }
     if (el.id === "selCpt") { S.setFactureCompte(el.dataset.id, el.value); toast("Compte modifié"); }
     if (el.id === "selStatutPaie") {
       // active/désactive visuellement le mode+date selon le statut choisi

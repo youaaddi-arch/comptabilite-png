@@ -100,6 +100,53 @@ PNG.store = (function () {
     state.factures.slice().reverse().forEach((f) => upsertFournisseur(f));
   }
 
+  // Détail complet d'un fournisseur (par key) avec filtre période optionnel
+  // periode = { annee:"2026"|"", mois:"05"|"" } (vide = tout)
+  function fournisseurDetail(key, periode) {
+    ensureShape();
+    const fo = state.fournisseurs.find((x) => x.key === key);
+    if (!fo) return null;
+    periode = periode || {};
+    let facs = state.factures.filter((f) => fournisseurKey(f.fournisseur, f.societeId) === key);
+    // filtre par année/mois sur la date de facture
+    if (periode.annee) facs = facs.filter((f) => (f.dateFacture || "").slice(0, 4) === periode.annee);
+    if (periode.mois) facs = facs.filter((f) => (f.dateFacture || "").slice(5, 7) === periode.mois);
+    facs = facs.slice().sort((a, b) => (b.dateFacture || "").localeCompare(a.dateFacture || ""));
+
+    const r2 = (x) => Math.round(x * 100) / 100;
+    const estPaye = (f) => f.statutPaiement === "paye_verifie" || f.statutPaiement === "paye_attente";
+    const totalHT = facs.reduce((s, f) => s + (f.montantHT || 0), 0);
+    const totalTVA = facs.reduce((s, f) => s + (f.montantTVA || 0), 0);
+    const totalTTC = facs.reduce((s, f) => s + (f.montantTTC || 0), 0);
+    const paye = facs.filter(estPaye).reduce((s, f) => s + f.montantTTC, 0);
+    const aPayer = facs.filter((f) => f.statutPaiement === "a_payer").reduce((s, f) => s + f.montantTTC, 0);
+
+    // années disponibles (toutes factures du fournisseur, hors filtre)
+    const toutes = state.factures.filter((f) => fournisseurKey(f.fournisseur, f.societeId) === key);
+    const annees = Array.from(new Set(toutes.map((f) => (f.dateFacture || "").slice(0, 4)).filter(Boolean))).sort().reverse();
+
+    // série mensuelle (12 mois) de l'année filtrée (ou année courante/la + récente)
+    const anneeSerie = periode.annee || annees[0] || U.todayISO().slice(0, 4);
+    const serie = [];
+    for (let m = 1; m <= 12; m++) {
+      const mm = String(m).padStart(2, "0");
+      const fm = toutes.filter((f) => (f.dateFacture || "").slice(0, 4) === anneeSerie && (f.dateFacture || "").slice(5, 7) === mm);
+      serie.push({
+        mois: mm,
+        facture: r2(fm.reduce((s, f) => s + f.montantTTC, 0)),
+        paye: r2(fm.filter(estPaye).reduce((s, f) => s + f.montantTTC, 0)),
+        aPayer: r2(fm.filter((f) => f.statutPaiement === "a_payer").reduce((s, f) => s + f.montantTTC, 0)),
+      });
+    }
+
+    return {
+      ...fo, factures: facs, nbFactures: facs.length,
+      totalHT: r2(totalHT), totalTVA: r2(totalTVA), totalTTC: r2(totalTTC),
+      paye: r2(paye), aPayer: r2(aPayer),
+      annees, anneeSerie, serie, periode,
+    };
+  }
+
   function fournisseurDossiers() {
     ensureShape();
     return state.fournisseurs.map((fo) => {
@@ -901,7 +948,7 @@ PNG.store = (function () {
     recevoirEmail, traiterEmail, traiterTousEmails, detecterDoublon,
     saisirPaiement, definirStatutPaiement, marquerPaye, verifierPaiementBanque, verifierTousPaiements,
     enrichirSiren, appliquerEntreprise, fournisseurExiste, ajouterFournisseur, fournisseurDossiers, rebuildFournisseurs,
-    modifierFournisseur, creerFournisseurManuel, supprimerFournisseur, importerFournisseurs, ventilationFactures,
+    modifierFournisseur, creerFournisseurManuel, supprimerFournisseur, importerFournisseurs, ventilationFactures, fournisseurDetail,
     suggestionsPour, rapprocher, annulerRapprochement, rapprochementAuto, synchroniserBanque,
     tresorerie, tresorerieTotale, flux, facturesAValider, tauxRapprochement, tva,
     caParSociete, repartitionFinanceurs, serieFlux,
