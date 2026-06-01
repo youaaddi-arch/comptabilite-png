@@ -267,7 +267,7 @@
 
   /* --------------------- Délégation d'événements ------------------- */
   document.addEventListener("click", (ev) => {
-    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-navfac],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-saisirstatut],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#btnSaveOcr2,#btnTestGemini,#closeModal,#modalBack,#btnReset");
+    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-navfac],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-saisirstatut],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],[data-editfourn],[data-savefourndossier],[data-suppfourn],[data-newfourndossier],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#btnSaveOcr2,#btnTestGemini,#regReset,#btnImportFourn,#btnAddFourn,#fournImportConfirm,#closeModal,#modalBack,#btnReset");
     if (!t) return;
 
     if (t.id === "modalBack" && ev.target.id === "modalBack") return closeModal();
@@ -444,8 +444,66 @@
       toast(useG && kg.trim() ? "Réglages enregistrés ✓ — IA Gemini activée 🧠" : "Réglages OCR enregistrés ✓", "#059669");
       return;
     }
+    if (t.id === "regReset") { PNG._regFiltre = { q:"", statut:"", fournisseur:"", societe:"", dateFactDe:"", dateFactA:"", dateRegDe:"", dateRegA:"" }; render(); return; }
+
+    // ---- Fournisseurs : éditer / enregistrer / supprimer / ajouter / importer ----
+    if (t.dataset.editfourn) { ouvrirFournDossierModal(t.dataset.editfourn); return; }
+    if (t.id === "btnAddFourn") { ouvrirFournDossierModal(null); return; }
+    if (t.dataset.savefourndossier) {
+      const key = t.dataset.savefourndossier;
+      const v = (i) => { const el = document.getElementById(i); return el ? el.value : null; };
+      const champs = { nom: v("foNom"), societeId: v("foSoc"), categorie: v("foCat"), compteCharge: v("foCompte"), compteTiers: v("foTiers"), siren: v("foSiren"), siret: v("foSiret"), naf: v("foNaf"), adresse: v("foAdr"), email: v("foEmail"), telephone: v("foTel"), iban: v("foIban"), notes: v("foNotes") };
+      if (key === "new") { S.creerFournisseurManuel(champs); toast("Fournisseur ajouté ✓", "#059669"); }
+      else { S.modifierFournisseur(key, champs); toast("Fournisseur modifié ✓", "#0f172a"); }
+      closeModal(); render(); return;
+    }
+    if (t.dataset.suppfourn) {
+      if (confirm("Supprimer cette fiche fournisseur ?")) { S.supprimerFournisseur(t.dataset.suppfourn); closeModal(); toast("Fournisseur supprimé 🗑", "#dc2626"); render(); }
+      return;
+    }
+    if (t.id === "btnImportFourn") { ouvrirImportFournModal(); return; }
+    if (t.id === "fournImportConfirm") {
+      const txt = (document.getElementById("fournImportText") || {}).value || "";
+      const lignes = parserTableauFournisseurs(txt);
+      if (!lignes.length) { toast("Aucune ligne détectée (collez le tableau avec entêtes)", "#dc2626"); return; }
+      const r = S.importerFournisseurs(lignes, S.getScope() || undefined);
+      closeModal(); toast(`Import : ${r.cree} créé(s), ${r.maj} mis à jour ✓`, "#059669"); render(); return;
+    }
+
     if (t.id === "btnReset") { if (confirm("Réinitialiser toutes les données de démonstration ?")) { S.reset(); toast("Données réinitialisées", "#64748b"); render(); } return; }
   });
+
+  /* ---- Fournisseurs : modales d'édition et d'import ---------------- */
+  function ouvrirFournDossierModal(key) {
+    const wrap = document.getElementById("modal");
+    wrap.innerHTML = V.fournDossierModal(key);
+    wrap.classList.remove("hidden");
+  }
+  function ouvrirImportFournModal() {
+    const wrap = document.getElementById("modal");
+    wrap.innerHTML = V.importFournModal();
+    wrap.classList.remove("hidden");
+  }
+  // Parse un tableau collé (TSV depuis Excel, ou CSV) avec ligne d'entête
+  function parserTableauFournisseurs(txt) {
+    const lignes = txt.split(/\r?\n/).filter((l) => l.trim());
+    if (lignes.length < 2) return [];
+    const sep = lignes[0].indexOf("\t") >= 0 ? "\t" : (lignes[0].indexOf(";") >= 0 ? ";" : ",");
+    const norm = (s) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z]/g, "");
+    const entetes = lignes[0].split(sep).map(norm);
+    return lignes.slice(1).map((l) => {
+      const cells = l.split(sep);
+      const o = {};
+      entetes.forEach((h, i) => { o[h] = (cells[i] || "").trim(); });
+      // alias d'entêtes courants
+      o.nom = o.nom || o.fournisseur || o.raisonsociale || o.societe2 || "";
+      o.comptecharge = o.comptecharge || o.compte || o.comptecomptable || o.codecomptable || o.codecompte || "";
+      o.comptetiers = o.comptetiers || o.compteauxiliaire || o.tiers || "";
+      o.telephone = o.telephone || o.tel || o.telephone1 || "";
+      o.email = o.email || o.mail || o.courriel || "";
+      return o;
+    });
+  }
 
   // Changements de sélection dans la modale (société / compte)
   // Sélection du champ cible pour l'OCR de zone (focus / clic)
@@ -461,8 +519,11 @@
     }
   });
 
+  // Filtres du registre : selects + dates -> re-render ; texte -> via input plus bas
+  const REG_FILTER_IDS = { regStatut: "statut", regSociete: "societe", regDateFactDe: "dateFactDe", regDateFactA: "dateFactA", regDateRegDe: "dateRegDe", regDateRegA: "dateRegA" };
   document.addEventListener("change", (ev) => {
     const el = ev.target;
+    if (REG_FILTER_IDS[el.id]) { PNG._regFiltre[REG_FILTER_IDS[el.id]] = el.value; render(); return; }
     if (el.id === "selCpt") { S.setFactureCompte(el.dataset.id, el.value); toast("Compte modifié"); }
     if (el.id === "selStatutPaie") {
       // active/désactive visuellement le mode+date selon le statut choisi
@@ -476,7 +537,22 @@
     if (el.id === "globalSoc") { S.setScope(el.value); render(); }
   });
 
-  // Recalcul live des montants dans la fiche facture (sans recharger la modale)
+  // Recherche texte du registre / fournisseurs : filtre avec léger délai (garde le focus)
+  let _filtreT;
+  document.addEventListener("input", (ev) => {
+    const el = ev.target;
+    if (el.id === "regQ" || el.id === "regFournisseur") {
+      PNG._regFiltre[el.id === "regQ" ? "q" : "fournisseur"] = el.value;
+      clearTimeout(_filtreT); _filtreT = setTimeout(() => { render(); const f = document.getElementById(el.id); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); } }, 250);
+      return;
+    }
+    if (el.id === "fournQ") {
+      PNG._fournFiltre = el.value;
+      clearTimeout(_filtreT); _filtreT = setTimeout(() => { render(); const f = document.getElementById("fournQ"); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); } }, 250);
+      return;
+    }
+  });
+
   document.addEventListener("input", (ev) => {
     const el = ev.target;
     if (el.id !== "edHT" && el.id !== "edTaux") return;

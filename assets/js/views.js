@@ -120,10 +120,11 @@ PNG.views = (function () {
         ${kpiCard("TVA déductible", U.fmtEUR(tva.deductible), `À ${tva.aDecaisser>=0?'décaisser':'récupérer'} : ${U.fmtEUR(Math.abs(tva.aDecaisser))}`, "#db2777", "T")}
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-        ${kpiCard("Chiffre d'affaires", U.fmtEUR(caTotal), "Dossiers facturés", "#0ea5e9", "▲")}
-        ${kpiCard("Reçues par email", S.get().factures.filter(S.inScope).filter(x=>x.source==="email").length, "factures collectées par email", "#7c3aed", "✉")}
-        ${kpiCard("Sociétés actives", PNG.companies.filter(c=>S.SOLDES_INIT[c.id]).length, `sur ${PNG.companies.length} entités`, "#0891b2", "🏢")}
-        ${kpiCard("Factures comptabilisées", S.get().factures.filter(x=>x.statut==="comptabilise").length, "ce mois", "#16a34a", "✓")}
+        ${(() => { const vf = S.ventilationFactures(S.getScope() || undefined); return `
+        ${kpiCard("Factures validées", U.fmtEUR(vf.valide), `${vf.nbValide} facture(s) comptabilisée(s)`, "#0ea5e9", "▲")}
+        ${kpiCard("Factures à payer", U.fmtEUR(vf.aPayer), "engagement non réglé", "#dc2626", "€")}
+        ${kpiCard("Factures payées", U.fmtEUR(vf.paye), "réglées / en vérification", "#16a34a", "✓")}
+        ${kpiCard("Reçues par email", S.get().factures.filter(S.inScope).filter(x=>x.source==="email").length, "collectées par email", "#7c3aed", "✉")}`; })()}
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
@@ -716,8 +717,33 @@ PNG.views = (function () {
   }
 
   /* ===================== REGISTRE DES FACTURES (grand tableau) ===== */
+  // état des filtres du registre (persistant pendant la session)
+  PNG._regFiltre = PNG._regFiltre || { q: "", statut: "", fournisseur: "", societe: "", dateFactDe: "", dateFactA: "", dateRegDe: "", dateRegA: "" };
+
+  function registreFiltrer(all) {
+    const F = PNG._regFiltre;
+    const q = (F.q || "").toLowerCase().trim();
+    return all.filter((x) => {
+      if (F.statut && x.statutPaiement !== F.statut) return false;
+      if (F.societe && x.societeId !== F.societe) return false;
+      if (F.fournisseur && !(x.fournisseur || "").toLowerCase().includes(F.fournisseur.toLowerCase())) return false;
+      if (F.dateFactDe && (x.dateFacture || "") < F.dateFactDe) return false;
+      if (F.dateFactA && (x.dateFacture || "") > F.dateFactA) return false;
+      if (F.dateRegDe && (x.dateReglement || "") < F.dateRegDe) return false;
+      if (F.dateRegA && (x.dateReglement || "") > F.dateRegA) return false;
+      if (q) {
+        const blob = [x.fournisseur, x.numeroFacture, x.fichier, x.categorie, x.compteCharge,
+          x.fournisseurSiren, x.fournisseurSiret, x.montantTTC, x.montantHT,
+          (U.companyById(x.societeId) || {}).raisonSociale].join(" ").toLowerCase();
+        if (!blob.includes(q)) return false;
+      }
+      return true;
+    });
+  }
+
   function registre() {
-    const list = S.get().factures.filter(S.inScope).slice().sort((a, b) => (b.dateFacture || "").localeCompare(a.dateFacture || ""));
+    const all = S.get().factures.filter(S.inScope);
+    const list = registreFiltrer(all).slice().sort((a, b) => (b.dateFacture || "").localeCompare(a.dateFacture || ""));
     const d = (v) => v ? U.fmtDate(v) : `<span class="text-slate-300">—</span>`;
     const rows = list.map((x) => {
       const sp = U.STATUT_PAIEMENT[x.statutPaiement] || U.STATUT_PAIEMENT.a_payer;
@@ -748,10 +774,38 @@ PNG.views = (function () {
       ${scopeBanner()}
       <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div><h1 class="text-2xl font-bold text-slate-800">Registre des factures</h1>
-        <p class="text-slate-500 text-sm">Dates facture · import · règlement · décaissement (banque) · mode · HT · TVA · TTC · compte</p></div>
+        <p class="text-slate-500 text-sm">Recherche et filtres sur tous les champs · ${list.length}/${all.length} facture(s)</p></div>
         <div class="flex gap-2">
           <button id="btnVerifPaie" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">🏦 Vérifier paiements (${S.paiementsAVerifier()})</button>
           <button id="btnDeposeMobile" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl text-sm font-medium">📱 Dépôt mobile</button>
+        </div>
+      </div>
+      <!-- Barre de recherche + filtres -->
+      <div class="bg-white rounded-2xl border border-slate-100 p-3 mb-3">
+        <div class="flex gap-2 mb-2 flex-wrap">
+          <input id="regQ" value="${e(PNG._regFiltre.q)}" placeholder="🔎 Rechercher (fournisseur, n°, SIREN, montant, société…)" class="flex-1 min-w-[220px] border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+          <input id="regFournisseur" value="${e(PNG._regFiltre.fournisseur)}" placeholder="Fournisseur" class="border border-slate-200 rounded-lg px-3 py-2 text-sm w-40" />
+          <select id="regStatut" class="border border-slate-200 rounded-lg px-3 py-2 text-sm">
+            <option value="">Tous statuts</option>
+            <option value="a_payer" ${PNG._regFiltre.statut==="a_payer"?"selected":""}>À payer</option>
+            <option value="paye_attente" ${PNG._regFiltre.statut==="paye_attente"?"selected":""}>À vérifier</option>
+            <option value="paye_verifie" ${PNG._regFiltre.statut==="paye_verifie"?"selected":""}>Payée</option>
+          </select>
+          <select id="regSociete" class="border border-slate-200 rounded-lg px-3 py-2 text-sm">
+            <option value="">Toutes sociétés</option>
+            ${PNG.companies.filter((c)=>S.SOLDES_INIT[c.id]).map((c)=>`<option value="${c.id}" ${PNG._regFiltre.societe===c.id?"selected":""}>${e(c.raisonSociale)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="flex gap-2 items-center flex-wrap text-xs text-slate-500">
+          <span>Date facture :</span>
+          <input id="regDateFactDe" type="date" value="${e(PNG._regFiltre.dateFactDe)}" class="border border-slate-200 rounded-lg px-2 py-1.5 text-sm" />
+          <span>→</span>
+          <input id="regDateFactA" type="date" value="${e(PNG._regFiltre.dateFactA)}" class="border border-slate-200 rounded-lg px-2 py-1.5 text-sm" />
+          <span class="ml-3">Date règlement :</span>
+          <input id="regDateRegDe" type="date" value="${e(PNG._regFiltre.dateRegDe)}" class="border border-slate-200 rounded-lg px-2 py-1.5 text-sm" />
+          <span>→</span>
+          <input id="regDateRegA" type="date" value="${e(PNG._regFiltre.dateRegA)}" class="border border-slate-200 rounded-lg px-2 py-1.5 text-sm" />
+          <button id="regReset" class="ml-auto text-slate-400 hover:text-red-500">✕ Réinitialiser les filtres</button>
         </div>
       </div>
       <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-x-auto">
@@ -812,30 +866,126 @@ PNG.views = (function () {
 
   /* ===================== DOSSIERS FOURNISSEURS ===================== */
   function fournisseurs() {
-    const dossiers = S.fournisseurDossiers().filter(S.inScope);
-    const cards = dossiers.map((fo) => `
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
-        <div class="flex items-start justify-between mb-2">
-          <div class="min-w-0"><p class="font-bold text-slate-800 truncate">${e(fo.nom)}</p>
-          <p class="text-xs text-slate-400">${societeChip(fo.societeId)} · ${e(fo.categorie)}</p></div>
-          <span class="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full whitespace-nowrap">${fo.nbFactures} fact.</span>
-        </div>
-        <dl class="text-xs space-y-1 mb-3">
-          <div class="flex justify-between"><dt class="text-slate-400">Compte tiers</dt><dd class="font-mono">${e(fo.compteTiers)}</dd></div>
-          <div class="flex justify-between"><dt class="text-slate-400">Compte charge</dt><dd class="font-mono">${e(fo.compteCharge)}</dd></div>
-          ${fo.siren?`<div class="flex justify-between"><dt class="text-slate-400">SIREN</dt><dd class="font-mono">${e(fo.siren)}</dd></div>`:`<div class="flex justify-between"><dt class="text-slate-400">SIREN</dt><dd class="text-amber-500">non identifié</dd></div>`}
-          ${fo.naf?`<div class="flex justify-between"><dt class="text-slate-400">NAF</dt><dd>${e(fo.naf)}</dd></div>`:""}
-        </dl>
-        <div class="flex justify-between items-center pt-2 border-t border-slate-100">
-          <div><p class="text-[10px] text-slate-400">Total facturé</p><p class="font-semibold text-slate-700">${U.fmtEUR(fo.total)}</p></div>
-          <div class="text-right"><p class="text-[10px] text-slate-400">Reste dû</p><p class="font-semibold ${fo.du>0?'text-red-600':'text-emerald-600'}">${U.fmtEUR(fo.du)}</p></div>
-        </div>
-      </div>`).join("");
+    PNG._fournFiltre = PNG._fournFiltre || "";
+    const q = (PNG._fournFiltre || "").toLowerCase().trim();
+    let dossiers = S.fournisseurDossiers().filter(S.inScope);
+    if (q) dossiers = dossiers.filter((fo) => [fo.nom, fo.siren, fo.siret, fo.compteCharge, fo.compteTiers, fo.categorie, fo.naf, fo.email, fo.adresse].join(" ").toLowerCase().includes(q));
+
+    const rows = dossiers.map((fo) => `
+      <tr class="border-t border-slate-100 hover:bg-slate-50">
+        <td class="py-2.5 pl-3"><p class="text-sm font-medium text-slate-700">${e(fo.nom)}</p>
+          <p class="text-[10px] text-slate-400">${societeChip(fo.societeId)} · ${e(fo.categorie||"—")}</p></td>
+        <td class="py-2.5 text-xs font-mono">${e(fo.siren||"—")}</td>
+        <td class="py-2.5 text-center"><span class="font-mono text-xs">${e(fo.compteTiers||"—")}</span></td>
+        <td class="py-2.5 text-center"><span class="font-mono text-xs">${e(fo.compteCharge||"—")}</span></td>
+        <td class="py-2.5 text-center text-xs">${fo.nbFactures}</td>
+        <td class="py-2.5 text-right text-sm">${U.fmtEUR(fo.total)}</td>
+        <td class="py-2.5 text-right text-sm text-emerald-600">${U.fmtEUR(fo.paye)}</td>
+        <td class="py-2.5 text-right text-sm ${fo.aPayer>0?'text-red-600 font-medium':'text-slate-400'}">${U.fmtEUR(fo.aPayer)}</td>
+        <td class="py-2.5 text-center">
+          <button data-editfourn="${e(fo.key)}" class="text-blue-600 hover:text-blue-800 text-xs" title="Modifier">✎</button>
+          <button data-suppfourn="${e(fo.key)}" class="text-red-400 hover:text-red-600 text-xs ml-1" title="Supprimer">🗑</button>
+        </td>
+      </tr>`).join("");
+    const T = dossiers.reduce((a, f) => ({ total: a.total + f.total, paye: a.paye + f.paye, aPayer: a.aPayer + f.aPayer }), { total:0, paye:0, aPayer:0 });
+
     return `
       ${scopeBanner()}
-      <div class="mb-6"><h1 class="text-2xl font-bold text-slate-800">Dossiers fournisseurs</h1>
-      <p class="text-slate-500 text-sm">Fiches créées automatiquement à chaque nouvelle facture · compte tiers 401 · identification data.gouv</p></div>
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">${cards || `<p class="text-slate-400">Aucun fournisseur.</p>`}</div>`;
+      <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <div><h1 class="text-2xl font-bold text-slate-800">Fournisseurs</h1>
+        <p class="text-slate-500 text-sm">${dossiers.length} fournisseur(s) · 1 ligne par fournisseur · totaux facturé / payé / à payer</p></div>
+        <div class="flex gap-2">
+          <button id="btnAddFourn" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">＋ Ajouter</button>
+          <button id="btnImportFourn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">📥 Importer un tableau</button>
+        </div>
+      </div>
+      <div class="mb-3">
+        <input id="fournQ" value="${e(PNG._fournFiltre)}" placeholder="🔎 Rechercher un fournisseur (nom, SIREN, compte, NAF, email…)" class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
+      </div>
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-x-auto">
+        <table class="w-full min-w-[900px]">
+          <thead><tr class="text-[11px] text-slate-400 text-left bg-slate-50">
+            <th class="font-medium py-2 pl-3">Fournisseur / société</th><th class="font-medium py-2">SIREN</th>
+            <th class="font-medium py-2 text-center">Cpte tiers</th><th class="font-medium py-2 text-center">Cpte charge</th>
+            <th class="font-medium py-2 text-center">Fact.</th>
+            <th class="font-medium py-2 text-right">Total facturé</th><th class="font-medium py-2 text-right">Payé</th><th class="font-medium py-2 text-right">À payer</th>
+            <th class="font-medium py-2 text-center">Actions</th>
+          </tr></thead>
+          <tbody>${rows || `<tr><td colspan="9" class="text-center py-8 text-slate-400">Aucun fournisseur.</td></tr>`}</tbody>
+          <tfoot><tr class="border-t-2 border-slate-200 bg-slate-50 font-semibold text-sm">
+            <td class="py-2.5 pl-3" colspan="5">TOTAL (${dossiers.length})</td>
+            <td class="py-2.5 text-right">${U.fmtEUR(T.total)}</td><td class="py-2.5 text-right text-emerald-600">${U.fmtEUR(T.paye)}</td><td class="py-2.5 text-right text-red-600">${U.fmtEUR(T.aPayer)}</td><td></td>
+          </tr></tfoot>
+        </table>
+      </div>`;
+  }
+
+  /* Modale fiche fournisseur (ajout / édition) */
+  function fournDossierModal(key) {
+    const fo = key ? S.fournisseurDossiers().find((x) => x.key === key) : null;
+    const v = (x) => e((fo && fo[x]) || "");
+    const optionsSoc = PNG.companies.filter((c) => S.SOLDES_INIT[c.id]).map((co) => `<option value="${co.id}" ${fo && fo.societeId === co.id ? "selected" : ""}>${e(co.raisonSociale)}</option>`).join("");
+    const optionsCpt = PNG.planComptable.filter((p) => p.type === "Charge").map((p) => `<option value="${p.num}" ${fo && fo.compteCharge === p.num ? "selected" : ""}>${p.num} — ${e(p.libelle)}</option>`).join("");
+    const champ = (id, lbl, val, ph) => `<div><label class="block text-[11px] text-slate-400">${lbl}</label><input id="${id}" value="${val}" placeholder="${ph||""}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>`;
+    return `
+    <div class="fixed inset-0 bg-slate-900/50 z-40 flex items-center justify-center p-4" id="modalBack">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <h2 class="font-bold text-slate-800">${fo ? "✎ Modifier le fournisseur" : "＋ Nouveau fournisseur"}</h2>
+          <button id="closeModal" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+        </div>
+        <div class="p-5 space-y-2">
+          ${champ("foNom", "Nom *", v("nom"), "Raison sociale")}
+          <div><label class="block text-[11px] text-slate-400">Société (boîte)</label><select id="foSoc" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm">${optionsSoc}</select></div>
+          <div class="grid grid-cols-2 gap-2">
+            ${champ("foSiren", "SIREN", v("siren"))}
+            ${champ("foSiret", "SIRET", v("siret"))}
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div><label class="block text-[11px] text-slate-400">Compte de charge</label><select id="foCompte" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"><option value="">—</option>${optionsCpt}</select></div>
+            ${champ("foTiers", "Compte tiers (401…)", v("compteTiers"))}
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            ${champ("foCat", "Catégorie", v("categorie"))}
+            ${champ("foNaf", "Code NAF", v("naf"))}
+          </div>
+          ${champ("foAdr", "Adresse", v("adresse"))}
+          <div class="grid grid-cols-2 gap-2">
+            ${champ("foEmail", "Email", v("email"))}
+            ${champ("foTel", "Téléphone", v("telephone"))}
+          </div>
+          ${champ("foIban", "IBAN", v("iban"))}
+          ${champ("foNotes", "Notes", v("notes"))}
+          <div class="flex gap-2 pt-2">
+            <button data-savefourndossier="${fo ? e(fo.key) : "new"}" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">💾 Enregistrer</button>
+            ${fo ? `<button data-suppfourn="${e(fo.key)}" class="bg-white border border-red-200 text-red-600 px-4 py-2.5 rounded-xl text-sm">🗑 Supprimer</button>` : ""}
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  /* Modale d'import d'un tableau de fournisseurs */
+  function importFournModal() {
+    return `
+    <div class="fixed inset-0 bg-slate-900/50 z-40 flex items-center justify-center p-4" id="modalBack">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <h2 class="font-bold text-slate-800">📥 Importer des fournisseurs</h2>
+          <button id="closeModal" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+        </div>
+        <div class="p-5 space-y-3">
+          <p class="text-sm text-slate-600">Copiez votre tableau depuis <strong>Excel / Google Sheets</strong> et collez-le ci-dessous. La <strong>1re ligne doit être les entêtes</strong>.</p>
+          <div class="bg-slate-50 rounded-lg p-3 text-xs text-slate-500">
+            <p class="font-medium text-slate-600 mb-1">Colonnes reconnues (entêtes, dans n'importe quel ordre) :</p>
+            <code>nom</code> · <code>siren</code> · <code>siret</code> · <code>compteCharge</code> (ou « compte ») · <code>compteTiers</code> · <code>categorie</code> · <code>naf</code> · <code>adresse</code> · <code>email</code> · <code>telephone</code> · <code>iban</code> · <code>societe</code> (code ou nom de la boîte)
+          </div>
+          <textarea id="fournImportText" class="w-full h-48 border border-slate-200 rounded-lg p-2 font-mono text-xs" placeholder="nom	siren	compteCharge	categorie&#10;Orange Business	380129866	626100	Télécom&#10;EDF Entreprises	552081317	606800	Énergie"></textarea>
+          <p class="text-[11px] text-slate-400">Astuce : un fournisseur déjà existant (même nom + société) sera mis à jour ; sinon il est créé.</p>
+          <button id="fournImportConfirm" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">✓ Importer</button>
+        </div>
+      </div>
+    </div>`;
   }
 
   /* Modale de dépôt mobile (simulation du téléphone salarié) */
@@ -992,5 +1142,5 @@ PNG.views = (function () {
       '</div>';
   }
 
-  return { dashboard, dashboardCharts, factures, factureModal, collecte, banque, tvaView, financements, societes, plan, fonctionnalites, registre, aReglerView, fournisseurs, mobileModal, rapproManuelModal, nouveauFournModal, renderFournResults, ocrSettings };
+  return { dashboard, dashboardCharts, factures, factureModal, collecte, banque, tvaView, financements, societes, plan, fonctionnalites, registre, aReglerView, fournisseurs, fournDossierModal, importFournModal, mobileModal, rapproManuelModal, nouveauFournModal, renderFournResults, ocrSettings };
 })();

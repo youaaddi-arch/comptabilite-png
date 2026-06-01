@@ -105,9 +105,93 @@ PNG.store = (function () {
     return state.fournisseurs.map((fo) => {
       const facs = state.factures.filter((f) => fournisseurKey(f.fournisseur, f.societeId) === fo.key);
       const total = facs.reduce((s, f) => s + f.montantTTC, 0);
+      const paye = facs.filter((f) => f.statutPaiement === "paye_verifie" || f.statutPaiement === "paye_attente").reduce((s, f) => s + f.montantTTC, 0);
+      const aPayer = facs.filter((f) => f.statutPaiement === "a_payer").reduce((s, f) => s + f.montantTTC, 0);
       const du = facs.filter((f) => f.statutPaiement !== "paye_verifie").reduce((s, f) => s + f.montantTTC, 0);
-      return { ...fo, factures: facs, nbFactures: facs.length, total: Math.round(total * 100) / 100, du: Math.round(du * 100) / 100 };
+      return { ...fo, factures: facs, nbFactures: facs.length,
+        total: Math.round(total * 100) / 100, paye: Math.round(paye * 100) / 100,
+        aPayer: Math.round(aPayer * 100) / 100, du: Math.round(du * 100) / 100 };
     }).sort((a, b) => b.total - a.total);
+  }
+
+  // Modifie une fiche fournisseur existante (par sa key)
+  function modifierFournisseur(key, champs) {
+    ensureShape();
+    const fo = state.fournisseurs.find((x) => x.key === key);
+    if (!fo) return null;
+    ["nom", "categorie", "compteCharge", "compteTiers", "siren", "siret", "naf", "adresse", "email", "telephone", "iban", "notes"].forEach((k) => {
+      if (champs[k] != null) fo[k] = champs[k];
+    });
+    log("Fournisseur modifié", fo.nom);
+    save();
+    return fo;
+  }
+
+  // Crée un fournisseur manuellement
+  function creerFournisseurManuel(champs) {
+    ensureShape();
+    const societeId = champs.societeId || (PNG.companies.find((c) => SOLDES_INIT[c.id]) || {}).id;
+    const nom = (champs.nom || "Nouveau fournisseur").trim();
+    const key = fournisseurKey(nom, societeId);
+    if (state.fournisseurs.find((x) => x.key === key)) {
+      // déjà existant -> on le met à jour
+      return modifierFournisseur(key, champs);
+    }
+    const fo = {
+      key, nom, societeId,
+      categorie: champs.categorie || "Divers",
+      compteCharge: champs.compteCharge || "606800",
+      compteTiers: champs.compteTiers || ("401" + String(100 + (state.fournisseurs.length + 1)).slice(-3)),
+      siren: (champs.siren || "").replace(/\s/g, ""), siret: (champs.siret || "").replace(/\s/g, ""),
+      naf: champs.naf || "", adresse: champs.adresse || "",
+      email: champs.email || "", telephone: champs.telephone || "", iban: champs.iban || "",
+      notes: champs.notes || "", sourceSiren: champs.sourceSiren || "manuel",
+      cree: U.todayISO(), manuel: true,
+    };
+    state.fournisseurs.push(fo);
+    log("Fournisseur créé manuellement", `${fo.nom} (${U.companyById(societeId) ? U.companyById(societeId).code : ""})`);
+    save();
+    return fo;
+  }
+
+  function supprimerFournisseur(key) {
+    ensureShape();
+    const fo = state.fournisseurs.find((x) => x.key === key);
+    state.fournisseurs = state.fournisseurs.filter((x) => x.key !== key);
+    if (fo) log("Fournisseur supprimé", fo.nom);
+    save();
+  }
+
+  /* Import d'un tableau de fournisseurs (lignes = objets avec entêtes mappées).
+   * Champs reconnus (insensible casse/accents) : nom, siren, siret, compte (compteCharge),
+   * comptetiers, categorie, naf, adresse, email, telephone, iban, societe (code/nom). */
+  function importerFournisseurs(lignes, societeParDefaut) {
+    ensureShape();
+    let cree = 0, maj = 0;
+    const trouverSociete = (v) => {
+      if (!v) return null;
+      const V = String(v).toUpperCase().trim();
+      const c = PNG.companies.find((c) => (c.code && c.code.toUpperCase() === V) || (c.raisonSociale && c.raisonSociale.toUpperCase() === V) || c.id === v);
+      return c ? c.id : null;
+    };
+    (lignes || []).forEach((l) => {
+      if (!l.nom || !String(l.nom).trim()) return;
+      const societeId = trouverSociete(l.societe) || societeParDefaut || (PNG.companies.find((c) => SOLDES_INIT[c.id]) || {}).id;
+      const champs = {
+        societeId, nom: String(l.nom).trim(),
+        siren: l.siren || "", siret: l.siret || "",
+        compteCharge: l.comptecharge || l.compte || l.comptecomptable || "",
+        compteTiers: l.comptetiers || "",
+        categorie: l.categorie || "", naf: l.naf || l.ape || "",
+        adresse: l.adresse || "", email: l.email || l.mail || "",
+        telephone: l.telephone || l.tel || "", iban: l.iban || "", notes: l.notes || "",
+        sourceSiren: "import",
+      };
+      const key = fournisseurKey(champs.nom, societeId);
+      if (state.fournisseurs.find((x) => x.key === key)) { modifierFournisseur(key, champs); maj++; }
+      else { creerFournisseurManuel(champs); cree++; }
+    });
+    return { cree, maj };
   }
 
   // Enrichit une facture via data.gouv. Priorité au SIRET/SIREN lu sur la
@@ -724,6 +808,17 @@ PNG.store = (function () {
   }
   const tresorerieTotale = () => PNG.companies.reduce((s, c) => s + tresorerie(c.id), 0);
 
+  // Répartition de l'engagement fournisseur (factures) : validé / à payer / payé
+  function ventilationFactures(societeId) {
+    const facs = state.factures.filter((f) => f.type === "achat" && (!societeId || f.societeId === societeId));
+    const valide = facs.filter((f) => f.statut === "brouillon" || f.statut === "comptabilise");
+    const aPayer = valide.filter((f) => f.statutPaiement === "a_payer").reduce((s, f) => s + f.montantTTC, 0);
+    const paye = valide.filter((f) => f.statutPaiement === "paye_verifie" || f.statutPaiement === "paye_attente").reduce((s, f) => s + f.montantTTC, 0);
+    const totalValide = valide.reduce((s, f) => s + f.montantTTC, 0);
+    const r2 = (x) => Math.round(x * 100) / 100;
+    return { valide: r2(totalValide), aPayer: r2(aPayer), paye: r2(paye), nbValide: valide.length };
+  }
+
   function flux(date) {
     let enc = 0, dec = 0;
     state.transactions.filter((t) => t.date === date).forEach((t) => {
@@ -806,6 +901,7 @@ PNG.store = (function () {
     recevoirEmail, traiterEmail, traiterTousEmails, detecterDoublon,
     saisirPaiement, definirStatutPaiement, marquerPaye, verifierPaiementBanque, verifierTousPaiements,
     enrichirSiren, appliquerEntreprise, fournisseurExiste, ajouterFournisseur, fournisseurDossiers, rebuildFournisseurs,
+    modifierFournisseur, creerFournisseurManuel, supprimerFournisseur, importerFournisseurs, ventilationFactures,
     suggestionsPour, rapprocher, annulerRapprochement, rapprochementAuto, synchroniserBanque,
     tresorerie, tresorerieTotale, flux, facturesAValider, tauxRapprochement, tva,
     caParSociete, repartitionFinanceurs, serieFlux,
