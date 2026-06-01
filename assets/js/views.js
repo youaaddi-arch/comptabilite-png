@@ -883,8 +883,8 @@ PNG.views = (function () {
         <td class="py-2.5 text-right text-sm text-emerald-600">${U.fmtEUR(fo.paye)}</td>
         <td class="py-2.5 text-right text-sm ${fo.aPayer>0?'text-red-600 font-medium':'text-slate-400'}">${U.fmtEUR(fo.aPayer)}</td>
         <td class="py-2.5 text-center">
-          <button data-editfourn="${e(fo.key)}" onclick="event.stopPropagation()" class="text-blue-600 hover:text-blue-800 text-xs" title="Modifier">✎</button>
-          <button data-suppfourn="${e(fo.key)}" onclick="event.stopPropagation()" class="text-red-400 hover:text-red-600 text-xs ml-1" title="Supprimer">🗑</button>
+          <button data-editfourn="${e(fo.key)}" class="text-blue-600 hover:text-blue-800 text-sm" title="Modifier">✎</button>
+          <button data-suppfourn="${e(fo.key)}" class="text-red-400 hover:text-red-600 text-sm ml-2" title="Supprimer">🗑</button>
         </td>
       </tr>`).join("");
     const T = dossiers.reduce((a, f) => ({ total: a.total + f.total, paye: a.paye + f.paye, aPayer: a.aPayer + f.aPayer }), { total:0, paye:0, aPayer:0 });
