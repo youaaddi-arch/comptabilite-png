@@ -636,28 +636,164 @@ PNG.views = (function () {
 
   /* ============================ SOCIÉTÉS ========================== */
   function societes() {
-    const cards = PNG.companies.map((c) => `
-      <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+    PNG._socQ = PNG._socQ || "";
+    const q = (PNG._socQ || "").toLowerCase().trim();
+    let liste = PNG.companies.slice();
+    if (q) liste = liste.filter((c) => [c.raisonSociale, c.marque, c.code, c.siren, c.siret, c.representant, c.siege].join(" ").toLowerCase().includes(q));
+    const cards = liste.map((c) => `
+      <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md hover:border-blue-200 transition cursor-pointer" data-socdetail="${c.id}">
         <div class="flex items-center gap-3 mb-3">
-          <span class="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-xs" style="background:${c.couleur}">${e(c.num || c.code.slice(0,2))}</span>
-          <div class="min-w-0"><p class="font-bold text-slate-800 truncate">${e(c.raisonSociale)}</p><p class="text-xs text-slate-400 truncate">${e(c.marque)} · ${e(c.formeJuridique)}</p></div>
+          <span class="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-xs" style="background:${c.couleur}">${e(c.num || (c.code||"").slice(0,2))}</span>
+          <div class="min-w-0"><p class="font-bold text-blue-700 truncate hover:underline">${e(c.raisonSociale)}</p><p class="text-xs text-slate-400 truncate">${e(c.marque)} · ${e(c.formeJuridique)}</p></div>
+          <button data-editsoc="${c.id}" class="ml-auto text-blue-600 hover:text-blue-800 text-sm" title="Modifier">✎</button>
         </div>
         <dl class="text-xs space-y-1">
           ${c.siren ? `<div class="flex justify-between"><dt class="text-slate-400">SIREN</dt><dd class="font-mono">${e(c.siren)}</dd></div>` : ""}
           ${c.siret ? `<div class="flex justify-between"><dt class="text-slate-400">SIRET siège</dt><dd class="font-mono">${e(c.siret)}</dd></div>` : ""}
-          ${c.nda ? `<div class="flex justify-between"><dt class="text-slate-400">NDA</dt><dd class="font-mono">${e(c.nda)}</dd></div>` : ""}
           ${c.representant && c.representant !== "—" ? `<div class="flex justify-between"><dt class="text-slate-400">Représentant</dt><dd class="text-right">${e(c.representant)}</dd></div>` : ""}
-          ${c.opco ? `<div class="flex justify-between"><dt class="text-slate-400">OPCO</dt><dd>${e(c.opco)}</dd></div>` : ""}
           <div class="flex justify-between"><dt class="text-slate-400">Assujetti TVA</dt><dd>${c.tvaAssujetti === true ? badge("Oui","bg-emerald-100 text-emerald-700") : c.tvaAssujetti === false ? badge("Non","bg-slate-100 text-slate-500") : badge("À confirmer","bg-amber-100 text-amber-700")}</dd></div>
           <div class="flex justify-between"><dt class="text-slate-400">Trésorerie</dt><dd class="font-semibold ${S.tresorerie(c.id)<0?'text-red-600':'text-slate-700'}">${U.fmtEUR(S.tresorerie(c.id))}</dd></div>
         </dl>
-        ${c.campuses.length ? `<div class="mt-3 pt-3 border-t border-slate-100"><p class="text-xs text-slate-400 mb-1">Établissements (${c.campuses.length})</p>${c.campuses.map((cp)=>`<p class="text-xs text-slate-600">📍 ${e(cp)}</p>`).join("")}</div>` : `<p class="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-300 italic">Informations à compléter</p>`}
-        ${c.cursus && c.cursus.length ? `<div class="mt-2 flex flex-wrap gap-1">${c.cursus.map((cu)=>`<span class="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">${e(cu)}</span>`).join("")}</div>` : ""}
+        <p class="mt-3 pt-3 border-t border-slate-100 text-xs text-blue-600">Voir le détail & les factures →</p>
       </div>`).join("");
     return `
-      <div class="mb-6"><h1 class="text-2xl font-bold text-slate-800">Sociétés du groupe</h1>
-      <p class="text-slate-500 text-sm">${PNG.companies.length} entités · utilisées pour la reconnaissance OCR et l'affectation comptable</p></div>
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">${cards}</div>`;
+      <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <div><h1 class="text-2xl font-bold text-slate-800">Sociétés du groupe</h1>
+        <p class="text-slate-500 text-sm">${liste.length} entité(s) · cliquez pour le détail · modifiable</p></div>
+        <button id="btnAddSoc" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">＋ Ajouter une société</button>
+      </div>
+      <div class="mb-3"><input id="socQ" value="${e(PNG._socQ)}" placeholder="🔎 Rechercher une société (nom, SIREN, code…)" class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" /></div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">${cards || `<p class="text-slate-400">Aucune société.</p>`}</div>`;
+  }
+
+  /* Modale société (ajout / édition) */
+  function societeModal(id) {
+    const c = id ? PNG.companies.find((x) => x.id === id) : null;
+    const v = (k) => e((c && c[k]) || "");
+    const champ = (idf, lbl, val, ph) => `<div><label class="block text-[11px] text-slate-400">${lbl}</label><input id="${idf}" value="${val}" placeholder="${ph||""}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" /></div>`;
+    const tva = c ? c.tvaAssujetti : null;
+    return `
+    <div class="fixed inset-0 bg-slate-900/50 z-40 flex items-center justify-center p-4" id="modalBack">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <h2 class="font-bold text-slate-800">${c ? "✎ Modifier la société" : "＋ Nouvelle société"}</h2>
+          <button id="closeModal" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+        </div>
+        <div class="p-5 space-y-2">
+          ${champ("scNom", "Raison sociale *", v("raisonSociale"))}
+          <div class="grid grid-cols-2 gap-2">${champ("scCode", "Code (ex PNBS)", v("code"))}${champ("scMarque", "Marque", v("marque"))}</div>
+          <div class="grid grid-cols-2 gap-2">${champ("scSiren", "SIREN", v("siren"))}${champ("scSiret", "SIRET siège", v("siret"))}</div>
+          <div class="grid grid-cols-2 gap-2">${champ("scForme", "Forme juridique", v("formeJuridique"))}${champ("scRep", "Représentant", v("representant"))}</div>
+          <div class="grid grid-cols-2 gap-2">${champ("scNda", "NDA", v("nda"))}${champ("scOpco", "OPCO", v("opco"))}</div>
+          ${champ("scSiege", "Adresse du siège", v("siege"))}
+          <div class="grid grid-cols-2 gap-2">
+            <div><label class="block text-[11px] text-slate-400">Assujetti TVA</label>
+              <select id="scTva" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm">
+                <option value="" ${tva==null?"selected":""}>À confirmer</option>
+                <option value="oui" ${tva===true?"selected":""}>Oui</option>
+                <option value="non" ${tva===false?"selected":""}>Non</option>
+              </select></div>
+            ${champ("scSolde", "Trésorerie initiale (€)", c ? (S.SOLDES_INIT[c.id] || "") : "")}
+          </div>
+          <div class="flex gap-2 pt-2">
+            <button data-savesoc="${c ? c.id : "new"}" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">💾 Enregistrer</button>
+          </div>
+          ${c && !c.creeManuel ? `<p class="text-[10px] text-slate-400">Société officielle du groupe : vos modifications sont conservées localement.</p>` : ""}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  /* Page détail société (factures fournisseurs + graphiques) */
+  function societeDetail(id, periode) {
+    const det = S.societeDetail(id, periode || {});
+    if (!det) return `<div class="p-8 text-slate-400">Société introuvable. <a href="#societes" class="text-blue-600">← Retour</a></div>`;
+    const c = det.societe;
+    const dd = (vv) => vv ? U.fmtDate(vv) : `<span class="text-slate-300">—</span>`;
+    const moisOpts = [["", "Tous les mois"]].concat(["01","02","03","04","05","06","07","08","09","10","11","12"].map((m,i)=>[m,["Janv","Févr","Mars","Avr","Mai","Juin","Juil","Août","Sept","Oct","Nov","Déc"][i]])).map(([vv,l])=>`<option value="${vv}" ${(det.periode.mois||"")===vv?"selected":""}>${l}</option>`).join("");
+    const anneeOpts = [["", "Toutes années"]].concat((det.annees||[]).map((a)=>[a,a])).map(([vv,l])=>`<option value="${vv}" ${(det.periode.annee||"")===vv?"selected":""}>${l}</option>`).join("");
+    const rows = det.factures.map((x) => {
+      const sp = U.STATUT_PAIEMENT[x.statutPaiement] || U.STATUT_PAIEMENT.a_payer;
+      return `<tr class="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" data-open="${x.id}">
+        <td class="py-2.5 pl-3 text-sm">${e(x.fournisseur)}<br><span class="text-[10px] text-slate-400">${e(x.numeroFacture)}</span></td>
+        <td class="py-2.5 text-xs">${dd(x.dateFacture)}</td>
+        <td class="py-2.5 text-xs">${dd(x.dateReglement || x.datePaiement)}</td>
+        <td class="py-2.5 text-right text-sm">${U.fmtEUR(x.montantHT)}</td>
+        <td class="py-2.5 text-right text-xs text-slate-500">${U.fmtEUR(x.montantTVA)}</td>
+        <td class="py-2.5 text-right text-sm font-medium">${U.fmtEUR(x.montantTTC)}</td>
+        <td class="py-2.5 text-center text-xs">${badge(sp.label, sp.cls)}</td>
+        <td class="py-2.5 text-center text-xs">${x.rapproche ? badge("↔ rapproché","bg-emerald-100 text-emerald-700") : badge("non rapproché","bg-slate-100 text-slate-500")}</td>
+      </tr>`;
+    }).join("");
+    return `
+      <div class="mb-4"><a href="#societes" class="text-sm text-blue-600 hover:underline">← Toutes les sociétés</a></div>
+      <div class="flex items-start justify-between mb-6 flex-wrap gap-3">
+        <div>
+          <h1 class="text-2xl font-bold text-slate-800">${e(c.raisonSociale)}</h1>
+          <p class="text-slate-500 text-sm">${e(c.marque)} · ${e(c.formeJuridique)} ${c.siren?`· SIREN ${e(c.siren)}`:""} · Trésorerie ${U.fmtEUR(S.tresorerie(c.id))}</p>
+        </div>
+        <div class="flex gap-2 items-center">
+          <select id="scDetailAnnee" data-id="${c.id}" class="border border-slate-200 rounded-lg px-3 py-2 text-sm">${anneeOpts}</select>
+          <select id="scDetailMois" data-id="${c.id}" class="border border-slate-200 rounded-lg px-3 py-2 text-sm">${moisOpts}</select>
+          <button data-editsoc="${c.id}" class="bg-white border border-slate-200 hover:bg-slate-50 px-3 py-2 rounded-lg text-sm">✎ Modifier</button>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+        ${kpiCard("Total facturé (TTC)", U.fmtEUR(det.totalTTC), `${det.nbFactures} facture(s) · HT ${U.fmtEUR(det.totalHT)}`, "#0ea5e9", "▲")}
+        ${kpiCard("Payé", U.fmtEUR(det.paye), "réglées", "#16a34a", "✓")}
+        ${kpiCard("À vérifier", U.fmtEUR(det.aVerifier), "payées à vérifier", "#2563eb", "?")}
+        ${kpiCard("À payer", U.fmtEUR(det.aPayer), "non réglées", "#dc2626", "€")}
+      </div>
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <button data-socfac="${c.id}|rapproche" class="text-left">${kpiCard("Rapprochées", U.fmtEUR(det.rapproche), "voir les factures →", "#059669", "↔")}</button>
+        <button data-socfac="${c.id}|nonrapproche" class="text-left">${kpiCard("Non rapprochées", U.fmtEUR(det.nonRapproche), "voir les factures →", "#ea580c", "!")}</button>
+        ${kpiCard("TVA", U.fmtEUR(det.totalTVA), "sur la période", "#db2777", "T")}
+        ${kpiCard("Factures", det.nbFactures, "sur la période", "#64748b", "▦")}
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 lg:col-span-2">
+          <h3 class="font-semibold text-slate-700 mb-3">Évolution ${det.anneeSerie} — facturé / payé / à payer</h3>
+          <canvas id="chartSocMois" height="110"></canvas>
+        </div>
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+          <h3 class="font-semibold text-slate-700 mb-3">Rapproché vs non rapproché</h3>
+          <canvas id="chartSocRappro" height="200"></canvas>
+        </div>
+      </div>
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-x-auto">
+        <table class="w-full min-w-[820px]">
+          <thead><tr class="text-[11px] text-slate-400 text-left bg-slate-50">
+            <th class="font-medium py-2 pl-3">Fournisseur / n°</th><th class="font-medium py-2">Date facture</th><th class="font-medium py-2">Date paiement</th>
+            <th class="font-medium py-2 text-right">HT</th><th class="font-medium py-2 text-right">TVA</th><th class="font-medium py-2 text-right">TTC</th>
+            <th class="font-medium py-2 text-center">Statut</th><th class="font-medium py-2 text-center">Banque</th>
+          </tr></thead>
+          <tbody>${rows || `<tr><td colspan="8" class="text-center py-8 text-slate-400">Aucune facture sur cette période</td></tr>`}</tbody>
+          <tfoot><tr class="border-t-2 border-slate-200 bg-slate-50 font-semibold text-sm">
+            <td class="py-2.5 pl-3" colspan="3">TOTAL (${det.nbFactures})</td>
+            <td class="py-2.5 text-right">${U.fmtEUR(det.totalHT)}</td><td class="py-2.5 text-right">${U.fmtEUR(det.totalTVA)}</td><td class="py-2.5 text-right">${U.fmtEUR(det.totalTTC)}</td><td colspan="2"></td>
+          </tr></tfoot>
+        </table>
+      </div>`;
+  }
+  function societeDetailCharts(id, periode) {
+    if (!window.Chart) return;
+    const det = S.societeDetail(id, periode || {});
+    if (!det) return;
+    PNG._scharts = PNG._scharts || {};
+    Object.values(PNG._scharts).forEach((c) => c && c.destroy());
+    PNG._scharts = {};
+    const labels = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
+    const elM = document.getElementById("chartSocMois");
+    if (elM) PNG._scharts.m = new Chart(elM, { type: "bar",
+      data: { labels, datasets: [
+        { label: "Facturé", data: det.serie.map((s)=>s.facture), backgroundColor: "#0ea5e9", borderRadius: 5 },
+        { label: "Payé", data: det.serie.map((s)=>s.paye), backgroundColor: "#16a34a", borderRadius: 5 },
+        { label: "À payer", data: det.serie.map((s)=>s.aPayer), backgroundColor: "#ef4444", borderRadius: 5 } ] },
+      options: { responsive: true, plugins: { legend: { position: "bottom" } }, scales: { y: { beginAtZero: true } } } });
+    const elR = document.getElementById("chartSocRappro");
+    if (elR) PNG._scharts.r = new Chart(elR, { type: "doughnut",
+      data: { labels: ["Rapprochées", "Non rapprochées"], datasets: [{ data: [det.rapproche, det.nonRapproche], backgroundColor: ["#059669", "#ea580c"] }] },
+      options: { responsive: true, plugins: { legend: { position: "bottom" } } } });
   }
 
   /* ========================= PLAN COMPTABLE ======================= */
@@ -1029,11 +1165,15 @@ PNG.views = (function () {
         </div>
       </div>
 
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         ${kpiCard("Total facturé (TTC)", U.fmtEUR(fo.totalTTC), `${fo.nbFactures} facture(s) · HT ${U.fmtEUR(fo.totalHT)}`, "#0ea5e9", "▲")}
-        ${kpiCard("Déjà payé", U.fmtEUR(fo.paye), "réglé / en vérification", "#16a34a", "✓")}
-        ${kpiCard("Reste à payer", U.fmtEUR(fo.aPayer), "factures non réglées", "#dc2626", "€")}
+        <button data-fournfac="${e(fo.key)}|paye_verifie" class="text-left">${kpiCard("Payé", U.fmtEUR(fo.paye), "voir les factures →", "#16a34a", "✓")}</button>
+        <button data-fournfac="${e(fo.key)}|a_payer" class="text-left">${kpiCard("Reste à payer", U.fmtEUR(fo.aPayer), "voir les factures →", "#dc2626", "€")}</button>
         ${kpiCard("TVA", U.fmtEUR(fo.totalTVA), "sur la période", "#db2777", "T")}
+      </div>
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <button data-fournfac="${e(fo.key)}|rapproche" class="text-left">${kpiCard("Rapprochées", U.fmtEUR(fo.factures.filter(x=>x.rapproche).reduce((s,x)=>s+x.montantTTC,0)), "voir les factures →", "#059669", "↔")}</button>
+        <button data-fournfac="${e(fo.key)}|nonrapproche" class="text-left">${kpiCard("Non rapprochées", U.fmtEUR(fo.factures.filter(x=>!x.rapproche).reduce((s,x)=>s+x.montantTTC,0)), "voir les factures →", "#ea580c", "!")}</button>
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
@@ -1246,5 +1386,54 @@ PNG.views = (function () {
       '</div>';
   }
 
-  return { dashboard, dashboardCharts, factures, factureModal, collecte, banque, tvaView, financements, societes, plan, fonctionnalites, registre, aReglerView, fournisseurs, fournisseurDetail, fournisseurDetailCharts, fournDossierModal, importFournModal, mobileModal, rapproManuelModal, nouveauFournModal, renderFournResults, ocrSettings };
+  /* Liste de factures filtrée (clic sur un compteur statut/rapproché).
+   * spec = "societe|<id>|<critere>" ou "fourn|<key>|<critere>"
+   * critere : rapproche | nonrapproche | a_payer | paye_attente | paye_verifie */
+  function facturesFiltre(spec) {
+    const parts = (spec || "").split("|");
+    const type = parts[0], cle = parts[1], crit = parts[2] || "";
+    let facs = S.get().factures.slice();
+    let titre = "Factures", sousTitre = "";
+    if (type === "societe") {
+      const c = U.companyById(cle); titre = c ? c.raisonSociale : "Société";
+      facs = facs.filter((f) => f.societeId === cle);
+      sousTitre = "Société : " + titre;
+    } else if (type === "fourn") {
+      facs = facs.filter((f) => (f.fournisseur + "@" + f.societeId) === cle);
+      titre = (facs[0] && facs[0].fournisseur) || "Fournisseur";
+      sousTitre = "Fournisseur : " + titre;
+    }
+    const critLabel = { rapproche: "rapprochées", nonrapproche: "non rapprochées", a_payer: "à payer", paye_attente: "à vérifier", paye_verifie: "payées" }[crit] || "toutes";
+    if (crit === "rapproche") facs = facs.filter((f) => f.rapproche);
+    else if (crit === "nonrapproche") facs = facs.filter((f) => !f.rapproche);
+    else if (crit) facs = facs.filter((f) => f.statutPaiement === crit);
+    facs.sort((a, b) => (b.dateFacture || "").localeCompare(a.dateFacture || ""));
+    const retour = type === "societe" ? `#societe/${encodeURIComponent(cle)}` : `#fournisseur/${encodeURIComponent(cle)}`;
+    const total = facs.reduce((s, f) => s + f.montantTTC, 0);
+    const rows = facs.map((x) => {
+      const sp = U.STATUT_PAIEMENT[x.statutPaiement] || U.STATUT_PAIEMENT.a_payer;
+      return `<tr class="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" data-open="${x.id}">
+        <td class="py-2.5 pl-3 text-sm">${e(x.fournisseur)}<br><span class="text-[10px] text-slate-400">${e(x.numeroFacture)} · ${societeChip(x.societeId)}</span></td>
+        <td class="py-2.5 text-xs">${x.dateFacture?U.fmtDate(x.dateFacture):"—"}</td>
+        <td class="py-2.5 text-right text-sm font-medium">${U.fmtEUR(x.montantTTC)}</td>
+        <td class="py-2.5 text-center text-xs">${badge(sp.label, sp.cls)}</td>
+        <td class="py-2.5 text-center text-xs">${x.rapproche ? badge("↔ rapproché","bg-emerald-100 text-emerald-700") : badge("non rapproché","bg-slate-100 text-slate-500")}</td>
+      </tr>`;
+    }).join("");
+    return `
+      <div class="mb-4"><a href="${retour}" class="text-sm text-blue-600 hover:underline">← Retour</a></div>
+      <div class="mb-6"><h1 class="text-2xl font-bold text-slate-800">Factures ${critLabel}</h1>
+      <p class="text-slate-500 text-sm">${e(sousTitre)} · ${facs.length} facture(s) · total ${U.fmtEUR(total)}</p></div>
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-x-auto">
+        <table class="w-full min-w-[640px]">
+          <thead><tr class="text-[11px] text-slate-400 text-left bg-slate-50">
+            <th class="font-medium py-2 pl-3">Fournisseur / n°</th><th class="font-medium py-2">Date</th>
+            <th class="font-medium py-2 text-right">TTC</th><th class="font-medium py-2 text-center">Statut</th><th class="font-medium py-2 text-center">Banque</th>
+          </tr></thead>
+          <tbody>${rows || `<tr><td colspan="5" class="text-center py-8 text-slate-400">Aucune facture</td></tr>`}</tbody>
+        </table>
+      </div>`;
+  }
+
+  return { dashboard, dashboardCharts, factures, factureModal, collecte, banque, tvaView, financements, societes, societeModal, societeDetail, societeDetailCharts, plan, fonctionnalites, registre, aReglerView, facturesFiltre, fournisseurs, fournisseurDetail, fournisseurDetailCharts, fournDossierModal, importFournModal, mobileModal, rapproManuelModal, nouveauFournModal, renderFournResults, ocrSettings };
 })();

@@ -68,6 +68,8 @@
       case "tva": html = V.tvaView(); break;
       case "financements": html = V.financements(current.filter); break;
       case "societes": html = V.societes(); break;
+      case "societe": html = V.societeDetail(current.filter, PNG._scPeriode || {}); break;
+      case "facturesfiltre": html = V.facturesFiltre(current.filter); break;
       case "plan": html = V.plan(); break;
       case "fonctionnalites": html = V.fonctionnalites(); break;
       case "ocr": html = V.ocrSettings(); break;
@@ -76,6 +78,7 @@
     view.innerHTML = html;
     if (current.route === "dashboard") setTimeout(V.dashboardCharts, 30);
     if (current.route === "fournisseur") setTimeout(() => V.fournisseurDetailCharts(current.filter, PNG._foPeriode || {}), 40);
+    if (current.route === "societe") setTimeout(() => V.societeDetailCharts(current.filter, PNG._scPeriode || {}), 40);
     window.scrollTo(0, 0);
   }
 
@@ -271,7 +274,7 @@
 
   /* --------------------- Délégation d'événements ------------------- */
   document.addEventListener("click", (ev) => {
-    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-navfac],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-saisirstatut],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],[data-editfourn],[data-savefourndossier],[data-suppfourn],[data-newfourndossier],[data-fourndetail],#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#btnSaveOcr2,#btnTestGemini,#regReset,#btnImportFourn,#btnAddFourn,#fournImportConfirm,#closeModal,#modalBack,#btnReset");
+    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-navfac],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-saisirstatut],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],[data-editfourn],[data-savefourndossier],[data-suppfourn],[data-newfourndossier],[data-fourndetail],[data-fournfac],[data-socdetail],[data-editsoc],[data-savesoc],[data-socfac],#btnAddSoc,#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#btnSaveOcr2,#btnTestGemini,#regReset,#btnImportFourn,#btnAddFourn,#fournImportConfirm,#closeModal,#modalBack,#btnReset");
     if (!t) return;
 
     if (t.id === "modalBack" && ev.target.id === "modalBack") return closeModal();
@@ -454,6 +457,22 @@
     if (t.dataset.editfourn) { ouvrirFournDossierModal(t.dataset.editfourn); return; }
     if (t.id === "btnAddFourn") { ouvrirFournDossierModal(null); return; }
     if (t.dataset.fourndetail) { PNG._foPeriode = {}; location.hash = "#fournisseur/" + encodeURIComponent(t.dataset.fourndetail); return; }
+    if (t.dataset.fournfac) { location.hash = "#facturesfiltre/" + encodeURIComponent("fourn|" + t.dataset.fournfac); return; }
+
+    // ---- Sociétés : détail / modifier / ajouter / liste factures ----
+    if (t.dataset.socdetail) { PNG._scPeriode = {}; location.hash = "#societe/" + encodeURIComponent(t.dataset.socdetail); return; }
+    if (t.dataset.editsoc) { const w = document.getElementById("modal"); w.innerHTML = V.societeModal(t.dataset.editsoc); w.classList.remove("hidden"); return; }
+    if (t.id === "btnAddSoc") { const w = document.getElementById("modal"); w.innerHTML = V.societeModal(null); w.classList.remove("hidden"); return; }
+    if (t.dataset.socfac) { location.hash = "#facturesfiltre/" + encodeURIComponent("societe|" + t.dataset.socfac); return; }
+    if (t.dataset.savesoc) {
+      const id = t.dataset.savesoc;
+      const v = (i) => { const el = document.getElementById(i); return el ? el.value : null; };
+      const tvaSel = v("scTva");
+      const champs = { raisonSociale: v("scNom"), code: v("scCode"), marque: v("scMarque"), siren: v("scSiren"), siret: v("scSiret"), formeJuridique: v("scForme"), representant: v("scRep"), nda: v("scNda"), opco: v("scOpco"), siege: v("scSiege"), tvaAssujetti: tvaSel === "oui" ? true : tvaSel === "non" ? false : null, solde: v("scSolde") };
+      if (id === "new") { const c = S.creerSociete(champs); toast("Société ajoutée ✓", "#059669"); closeModal(); location.hash = "#societe/" + encodeURIComponent(c.id); render(); }
+      else { S.modifierSociete(id, champs); toast("Société modifiée ✓", "#0f172a"); closeModal(); render(); }
+      return;
+    }
     if (t.dataset.savefourndossier) {
       const key = t.dataset.savefourndossier;
       const v = (i) => { const el = document.getElementById(i); return el ? el.value : null; };
@@ -531,6 +550,8 @@
     if (REG_FILTER_IDS[el.id]) { PNG._regFiltre[REG_FILTER_IDS[el.id]] = el.value; render(); return; }
     if (el.id === "foDetailAnnee") { PNG._foPeriode = Object.assign({}, PNG._foPeriode, { annee: el.value }); render(); return; }
     if (el.id === "foDetailMois") { PNG._foPeriode = Object.assign({}, PNG._foPeriode, { mois: el.value }); render(); return; }
+    if (el.id === "scDetailAnnee") { PNG._scPeriode = Object.assign({}, PNG._scPeriode, { annee: el.value }); render(); return; }
+    if (el.id === "scDetailMois") { PNG._scPeriode = Object.assign({}, PNG._scPeriode, { mois: el.value }); render(); return; }
     if (el.id === "selCpt") { S.setFactureCompte(el.dataset.id, el.value); toast("Compte modifié"); }
     if (el.id === "selStatutPaie") {
       // active/désactive visuellement le mode+date selon le statut choisi
@@ -556,6 +577,11 @@
     if (el.id === "fournQ") {
       PNG._fournFiltre = el.value;
       clearTimeout(_filtreT); _filtreT = setTimeout(() => { render(); const f = document.getElementById("fournQ"); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); } }, 250);
+      return;
+    }
+    if (el.id === "socQ") {
+      PNG._socQ = el.value;
+      clearTimeout(_filtreT); _filtreT = setTimeout(() => { render(); const f = document.getElementById("socQ"); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); } }, 250);
       return;
     }
   });

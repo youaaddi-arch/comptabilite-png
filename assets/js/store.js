@@ -45,6 +45,8 @@ PNG.store = (function () {
       inbox: [],        // emails de collecte reçus (avant OCR)
       activity: [],     // piste d'audit / historique
       fournisseurs: [], // fiches fournisseurs (créées auto)
+      societesEdits: {},// modifications de nos sociétés
+      societesAjout: [],// sociétés créées manuellement
     };
     ensureShape();
     if (persist) save();
@@ -54,6 +56,9 @@ PNG.store = (function () {
   function ensureShape() {
     if (!state.inbox) state.inbox = [];
     if (!state.activity) state.activity = [];
+    if (!state.societesEdits) state.societesEdits = {};   // {id: {champs modifiés}}
+    if (!state.societesAjout) state.societesAjout = [];   // sociétés créées
+    appliquerSocietes();
     if (!state.fournisseurs || !state.fournisseurs.length) { state.fournisseurs = []; rebuildFournisseurs(); }
     // champs paiement/drive sur factures anciennes
     state.factures.forEach((f) => {
@@ -65,6 +70,82 @@ PNG.store = (function () {
       if (f.dateDecaissement === undefined) f.dateDecaissement = (f.rapproche && f.statutPaiement === "paye_verifie") ? (f.datePaiement || null) : null;
       if (f.regleParSocieteId === undefined) f.regleParSocieteId = null;
     });
+  }
+
+  /* ---- Sociétés : édition / ajout (persistés, appliqués sur PNG.companies) -- */
+  // mémorise la liste d'origine une seule fois
+  if (!PNG._companiesBase) PNG._companiesBase = JSON.parse(JSON.stringify(PNG.companies));
+  function appliquerSocietes() {
+    // repart de la base, applique les edits, ajoute les sociétés créées
+    const base = JSON.parse(JSON.stringify(PNG._companiesBase));
+    base.forEach((c) => { if (state.societesEdits[c.id]) Object.assign(c, state.societesEdits[c.id]); });
+    PNG.companies = base.concat(state.societesAjout || []);
+  }
+  function modifierSociete(id, champs) {
+    ensureShape();
+    state.societesEdits[id] = Object.assign(state.societesEdits[id] || {}, champs);
+    appliquerSocietes();
+    log("Société modifiée", (PNG.companies.find((c) => c.id === id) || {}).raisonSociale || id);
+    save();
+  }
+  function creerSociete(champs) {
+    ensureShape();
+    const id = (champs.id || (champs.raisonSociale || "soc").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24) + "-" + Date.now().toString().slice(-4));
+    const c = {
+      id, code: champs.code || "PNG", marque: champs.marque || champs.raisonSociale || "",
+      raisonSociale: champs.raisonSociale || "Nouvelle société", formeJuridique: champs.formeJuridique || "—",
+      representant: champs.representant || "", siren: (champs.siren || "").replace(/\s/g, ""), siret: (champs.siret || "").replace(/\s/g, ""),
+      nda: champs.nda || "", opco: champs.opco || "", tvaAssujetti: champs.tvaAssujetti != null ? champs.tvaAssujetti : null,
+      couleur: champs.couleur || "#64748b", siege: champs.siege || "",
+      etablissements: champs.siret ? [{ siret: champs.siret, adresse: champs.siege || "", type: "SIEGE" }] : [],
+      campuses: champs.siege ? [champs.siege] : [], creeManuel: true,
+    };
+    state.societesAjout.push(c);
+    if (champs.solde != null) SOLDES_INIT[id] = parseFloat(champs.solde) || 0;
+    else if (SOLDES_INIT[id] == null) SOLDES_INIT[id] = 0;
+    appliquerSocietes();
+    log("Société créée", c.raisonSociale);
+    save();
+    return c;
+  }
+
+  /* Détail d'une de NOS sociétés : ses factures fournisseurs + agrégats + série */
+  function societeDetail(id, periode) {
+    ensureShape();
+    const c = PNG.companies.find((x) => x.id === id);
+    if (!c) return null;
+    periode = periode || {};
+    let facs = state.factures.filter((f) => f.societeId === id);
+    if (periode.annee) facs = facs.filter((f) => (f.dateFacture || "").slice(0, 4) === periode.annee);
+    if (periode.mois) facs = facs.filter((f) => (f.dateFacture || "").slice(5, 7) === periode.mois);
+    facs = facs.slice().sort((a, b) => (b.dateFacture || "").localeCompare(a.dateFacture || ""));
+    const r2 = (x) => Math.round(x * 100) / 100;
+    const estPaye = (f) => f.statutPaiement === "paye_verifie" || f.statutPaiement === "paye_attente";
+    const totalTTC = facs.reduce((s, f) => s + f.montantTTC, 0);
+    const totalHT = facs.reduce((s, f) => s + (f.montantHT || 0), 0);
+    const totalTVA = facs.reduce((s, f) => s + (f.montantTVA || 0), 0);
+    const paye = facs.filter((f) => f.statutPaiement === "paye_verifie").reduce((s, f) => s + f.montantTTC, 0);
+    const aVerifier = facs.filter((f) => f.statutPaiement === "paye_attente").reduce((s, f) => s + f.montantTTC, 0);
+    const aPayer = facs.filter((f) => f.statutPaiement === "a_payer").reduce((s, f) => s + f.montantTTC, 0);
+    const rapproche = facs.filter((f) => f.rapproche).reduce((s, f) => s + f.montantTTC, 0);
+    const nonRapproche = facs.filter((f) => !f.rapproche).reduce((s, f) => s + f.montantTTC, 0);
+    const toutes = state.factures.filter((f) => f.societeId === id);
+    const annees = Array.from(new Set(toutes.map((f) => (f.dateFacture || "").slice(0, 4)).filter(Boolean))).sort().reverse();
+    const anneeSerie = periode.annee || annees[0] || U.todayISO().slice(0, 4);
+    const serie = [];
+    for (let m = 1; m <= 12; m++) {
+      const mm = String(m).padStart(2, "0");
+      const fm = toutes.filter((f) => (f.dateFacture || "").slice(0, 4) === anneeSerie && (f.dateFacture || "").slice(5, 7) === mm);
+      serie.push({ mois: mm,
+        facture: r2(fm.reduce((s, f) => s + f.montantTTC, 0)),
+        paye: r2(fm.filter(estPaye).reduce((s, f) => s + f.montantTTC, 0)),
+        aPayer: r2(fm.filter((f) => f.statutPaiement === "a_payer").reduce((s, f) => s + f.montantTTC, 0)) });
+    }
+    return { societe: c, factures: facs, nbFactures: facs.length,
+      totalTTC: r2(totalTTC), totalHT: r2(totalHT), totalTVA: r2(totalTVA),
+      paye: r2(paye), aVerifier: r2(aVerifier), aPayer: r2(aPayer),
+      rapproche: r2(rapproche), nonRapproche: r2(nonRapproche),
+      annees, anneeSerie, serie, periode };
   }
 
   /* ---- Fiches / dossiers fournisseurs (créés automatiquement) ------ */
@@ -949,6 +1030,7 @@ PNG.store = (function () {
     saisirPaiement, definirStatutPaiement, marquerPaye, verifierPaiementBanque, verifierTousPaiements,
     enrichirSiren, appliquerEntreprise, fournisseurExiste, ajouterFournisseur, fournisseurDossiers, rebuildFournisseurs,
     modifierFournisseur, creerFournisseurManuel, supprimerFournisseur, importerFournisseurs, ventilationFactures, fournisseurDetail,
+    modifierSociete, creerSociete, societeDetail,
     suggestionsPour, rapprocher, annulerRapprochement, rapprochementAuto, synchroniserBanque,
     tresorerie, tresorerieTotale, flux, facturesAValider, tauxRapprochement, tva,
     caParSociete, repartitionFinanceurs, serieFlux,
