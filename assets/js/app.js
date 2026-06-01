@@ -6,7 +6,7 @@
 
   const NAV = [
     { route: "dashboard", label: "Tableau de bord", icon: "▦" },
-    { route: "factures", label: "Factures (OCR)", icon: "📄", badge: () => S.facturesAValider() },
+    { route: "factures", label: "Factures à valider", icon: "📄", badge: () => S.facturesAValider() },
     { route: "registre", label: "Registre factures", icon: "≡" },
     { route: "regler", label: "Factures à régler", icon: "€", badge: () => S.aRegler().length },
     { route: "fournisseurs", label: "Fournisseurs", icon: "🏷️" },

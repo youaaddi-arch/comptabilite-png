@@ -5,7 +5,7 @@
  * légal, adresses, assujettissement TVA) fourni par le groupe.
  * ===================================================================== */
 window.PNG = window.PNG || {};
-PNG.VERSION = "v-adresse-fourn";
+PNG.VERSION = "v-rename-valider";
 
 /* Helper concis pour décrire un établissement */
 function ETS(siret, adresse, type) { return { siret: siret, adresse: adresse, type: type || "ETS" }; }
