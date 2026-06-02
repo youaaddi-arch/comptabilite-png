@@ -331,7 +331,7 @@ PNG.views = (function () {
           <input type="checkbox" id="gAutoSync" ${cfg.autoSync ? "checked" : ""} class="w-4 h-4 rounded accent-emerald-600" />
           <span>Synchroniser <strong>automatiquement</strong> toutes les</span>
           <select id="gAutoSyncMin" class="border border-slate-200 rounded px-1.5 py-0.5">
-            ${[2, 5, 10, 15, 30].map((n) => `<option value="${n}" ${cfg.autoSyncMin == n ? "selected" : ""}>${n} min</option>`).join("")}
+            ${[1, 2, 5, 10, 15, 30].map((n) => `<option value="${n}" ${cfg.autoSyncMin == n ? "selected" : ""}>${n} min</option>`).join("")}
           </select>
           <span class="text-slate-400">— fonctionne tant que cet onglet reste ouvert (connexion requise).</span>
         </label>
