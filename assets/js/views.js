@@ -327,6 +327,15 @@ PNG.views = (function () {
           <a href="${driveLien}" target="_blank" rel="noopener" class="text-xs text-emerald-700 hover:underline ml-auto">Ouvrir le Drive partagé ↗</a>
         </div>
 
+        <label class="flex items-center flex-wrap gap-1.5 text-xs text-slate-600 mt-1 mb-1">
+          <input type="checkbox" id="gAutoSync" ${cfg.autoSync ? "checked" : ""} class="w-4 h-4 rounded accent-emerald-600" />
+          <span>Synchroniser <strong>automatiquement</strong> toutes les</span>
+          <select id="gAutoSyncMin" class="border border-slate-200 rounded px-1.5 py-0.5">
+            ${[2, 5, 10, 15, 30].map((n) => `<option value="${n}" ${cfg.autoSyncMin == n ? "selected" : ""}>${n} min</option>`).join("")}
+          </select>
+          <span class="text-slate-400">— fonctionne tant que cet onglet reste ouvert (connexion requise).</span>
+        </label>
+
         <pre id="googleLog" class="hidden bg-slate-900 text-emerald-200 text-[11px] leading-relaxed rounded-lg p-3 mt-2 max-h-52 overflow-auto whitespace-pre-wrap font-mono"></pre>
 
         <details class="mt-3 text-xs text-slate-500">

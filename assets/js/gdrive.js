@@ -39,6 +39,8 @@ PNG.google = (function () {
       driveId: DRIVE_DEFAUT,        // racine du Drive partagé
       racineNom: "Factures",        // sous-dossier racine créé dans le Drive partagé
       query: "has:attachment newer_than:60d",
+      autoSync: false,             // synchro auto périodique (tant que l'onglet est ouvert)
+      autoSyncMin: 5,              // intervalle en minutes
       processed: [],                // ids de messages Gmail déjà traités (anti-doublon)
     };
     try { return Object.assign(def, JSON.parse(localStorage.getItem(CFG_KEY) || "{}")); }

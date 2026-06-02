@@ -422,7 +422,7 @@
       enregistrerCfgGoogle();
       if (t.id === "btnGoogleConnect") {
         gLog("Ouverture de l'autorisation Google…", true);
-        PNG.google.connect().then((r) => { gLog("✓ Connecté" + (r.email ? " : " + r.email : "")); toast("Google connecté ✓", "#059669"); render(); })
+        PNG.google.connect().then((r) => { gLog("✓ Connecté" + (r.email ? " : " + r.email : "")); toast("Google connecté ✓", "#059669"); render(); demarrerAutoSync(); })
           .catch((e) => { gLog("❌ " + (e.message || e)); toast("Connexion Google échouée", "#dc2626"); });
         return;
       }
@@ -544,6 +544,23 @@
     box.textContent = (reset ? "" : box.textContent + "\n") + "[" + t + "] " + line;
     box.scrollTop = box.scrollHeight;
   }
+  // (Re)démarre la synchro automatique périodique (tant que l'onglet est ouvert)
+  function demarrerAutoSync() {
+    if (!PNG.google) return;
+    if (PNG._autoSyncTimer) { clearInterval(PNG._autoSyncTimer); PNG._autoSyncTimer = null; }
+    const cfg = PNG.google.getCfg();
+    if (!cfg.autoSync) return;
+    const min = Math.max(1, parseInt(cfg.autoSyncMin) || 5);
+    PNG._autoSyncTimer = setInterval(() => {
+      if (PNG._autoSyncEnCours || !PNG.google.isConnected()) return;
+      PNG._autoSyncEnCours = true;
+      gLog("⏱️ Synchronisation automatique…");
+      PNG.google.synchroniser((l) => gLog(l)).then((r) => {
+        if (r && (r.factures || r.archivees)) { toast(`📥 Auto : ${r.factures} facture(s) ajoutée(s)`, "#059669"); render(); }
+      }).catch((e) => gLog("❌ Auto : " + (e.message || e)))
+        .finally(() => { PNG._autoSyncEnCours = false; });
+    }, min * 60 * 1000);
+  }
 
   /* ---- Fournisseurs : modales d'édition et d'import ---------------- */
   function ouvrirFournDossierModal(key) {
@@ -611,6 +628,8 @@
       if (d) d.classList.toggle("hidden", el.value !== "paye");
     }
     if (el.id === "globalSoc") { S.setScope(el.value); render(); }
+    if (el.id === "gAutoSync") { PNG.google.setCfg({ autoSync: el.checked }); demarrerAutoSync(); toast(el.checked ? "Synchro automatique activée ✓" : "Synchro automatique désactivée", el.checked ? "#059669" : "#64748b"); return; }
+    if (el.id === "gAutoSyncMin") { PNG.google.setCfg({ autoSyncMin: parseInt(el.value) || 5 }); demarrerAutoSync(); return; }
   });
 
   // Recherche texte du registre / fournisseurs : filtre avec léger délai (garde le focus)
@@ -682,4 +701,5 @@
   S.subscribe(() => { try { renderSidebar(); } catch (e) {} });
   window.PNG._render = safeRender;
   safeRender();
+  try { demarrerAutoSync(); } catch (e) {}
 })();
