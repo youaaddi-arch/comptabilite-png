@@ -7,6 +7,7 @@
   const NAV = [
     { route: "dashboard", label: "Tableau de bord", icon: "▦" },
     { route: "factures", label: "Factures à valider", icon: "📄", badge: () => S.facturesAValider() },
+    { route: "collecte", label: "Collecte par email", icon: "📥" },
     { route: "registre", label: "Registre factures", icon: "≡" },
     { route: "regler", label: "Factures à régler", icon: "€", badge: () => S.aRegler().length },
     { route: "fournisseurs", label: "Fournisseurs", icon: "🏷️" },
@@ -58,7 +59,7 @@
     const view = document.getElementById("view");
     let html = "";
     switch (current.route) {
-      case "collecte": location.hash = "#factures"; return; // collecte fusionnée dans factures
+      case "collecte": html = V.collecte(); break;
       case "factures": html = V.factures(current.filter); break;
       case "registre": html = V.registre(); break;
       case "regler": html = V.aReglerView(); break;
