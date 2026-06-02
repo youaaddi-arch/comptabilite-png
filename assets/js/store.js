@@ -433,6 +433,18 @@ PNG.store = (function () {
     if (f) { f.compteCharge = compte; save(); }
   }
 
+  /* Enregistre le lien Drive RÉEL (après archivage Google Drive) sur la facture */
+  function setFactureDriveReel(id, fileUrl, folderUrl) {
+    const f = state.factures.find((x) => x.id === id);
+    if (!f) return null;
+    if (fileUrl) f.driveUrl = fileUrl;
+    f.driveFolderUrl = folderUrl || null;
+    f.archiveDrive = true;
+    log("Facture archivée sur Google Drive", `${f.fournisseur} → ${fileUrl || folderUrl}`);
+    save();
+    return f;
+  }
+
   /* Édition libre par le comptable AVANT validation : tous les champs.
    * Recalcule TVA/TTC à partir de HT + taux (sauf si TTC fourni explicitement). */
   function editFacture(id, champs) {
@@ -1024,7 +1036,7 @@ PNG.store = (function () {
   return {
     load, reset, save, subscribe, get, SOLDES_INIT, log,
     getScope, setScope, inScope,
-    setFactureSociete, setFactureCompte, validerBrouillon, comptabiliser, supprimerFacture,
+    setFactureSociete, setFactureCompte, setFactureDriveReel, validerBrouillon, comptabiliser, supprimerFacture,
     scanNouvelleFacture, deposerMobile, creerDepuisOCR,
     recevoirEmail, traiterEmail, traiterTousEmails, detecterDoublon,
     saisirPaiement, definirStatutPaiement, marquerPaye, verifierPaiementBanque, verifierTousPaiements,

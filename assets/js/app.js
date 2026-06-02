@@ -274,7 +274,7 @@
 
   /* --------------------- Délégation d'événements ------------------- */
   document.addEventListener("click", (ev) => {
-    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-navfac],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-saisirstatut],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],[data-editfourn],[data-savefourndossier],[data-suppfourn],[data-newfourndossier],[data-fourndetail],[data-fournfac],[data-socdetail],[data-editsoc],[data-savesoc],[data-socfac],#btnAddSoc,#btnScan,#btnSimEmail,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#btnSaveOcr2,#btnTestGemini,#regReset,#btnImportFourn,#btnAddFourn,#fournImportConfirm,#closeModal,#modalBack,#btnReset");
+    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-navfac],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-saisirstatut],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],[data-editfourn],[data-savefourndossier],[data-suppfourn],[data-newfourndossier],[data-fourndetail],[data-fournfac],[data-socdetail],[data-editsoc],[data-savesoc],[data-socfac],#btnAddSoc,#btnScan,#btnSimEmail,#btnGoogleConnect,#btnGoogleSync,#btnGoogleTestDrive,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#btnSaveOcr2,#btnTestGemini,#regReset,#btnImportFourn,#btnAddFourn,#fournImportConfirm,#closeModal,#modalBack,#btnReset");
     if (!t) return;
 
     if (t.id === "modalBack" && ev.target.id === "modalBack") return closeModal();
@@ -416,6 +416,33 @@
       render(); setTimeout(() => openModal(f.id), 150); return;
     }
 
+    // ---- Connexion Google (Gmail + Drive) ----
+    if (t.id === "btnGoogleConnect" || t.id === "btnGoogleSync" || t.id === "btnGoogleTestDrive") {
+      enregistrerCfgGoogle();
+      if (t.id === "btnGoogleConnect") {
+        gLog("Ouverture de l'autorisation Google…", true);
+        PNG.google.connect().then((r) => { gLog("✓ Connecté" + (r.email ? " : " + r.email : "")); toast("Google connecté ✓", "#059669"); render(); })
+          .catch((e) => { gLog("❌ " + (e.message || e)); toast("Connexion Google échouée", "#dc2626"); });
+        return;
+      }
+      if (t.id === "btnGoogleTestDrive") {
+        gLog("Test de l'accès au Drive partagé…", true);
+        PNG.google.testerDrive((l) => gLog(l)).then(() => toast("Accès Drive OK ✓", "#059669"))
+          .catch((e) => { gLog("❌ " + (e.message || e)); toast("Accès Drive : échec", "#dc2626"); });
+        return;
+      }
+      // btnGoogleSync
+      const btn = document.getElementById("btnGoogleSync");
+      if (btn) { btn.disabled = true; btn.textContent = "⏳ Synchronisation en cours…"; }
+      gLog("Démarrage de la synchronisation…", true);
+      PNG.google.synchroniser((l) => gLog(l)).then((r) => {
+        toast(`📥 ${r.factures} facture(s) créée(s), ${r.archivees} archivée(s) sur le Drive`, "#059669");
+        render();
+      }).catch((e) => { gLog("❌ " + (e.message || e)); toast("Synchronisation échouée : " + (e.message || e), "#dc2626"); })
+        .finally(() => { const b = document.getElementById("btnGoogleSync"); if (b) { b.disabled = false; b.textContent = "⬇️ Synchroniser les factures reçues"; } });
+      return;
+    }
+
     if (t.dataset.rappro) { S.rapprocher(t.dataset.rappro, t.dataset.ctype, t.dataset.cid); closeModal(); toast("Écriture rapprochée ✓", "#059669"); render(); return; }
     if (t.dataset.rapprochoix) {
       const wrap = document.getElementById("modal");
@@ -496,6 +523,26 @@
 
     if (t.id === "btnReset") { if (confirm("Réinitialiser toutes les données de démonstration ?")) { S.reset(); toast("Données réinitialisées", "#64748b"); render(); } return; }
   });
+
+  /* ---- Connexion Google : config + journal en direct --------------- */
+  function enregistrerCfgGoogle() {
+    if (!PNG.google) return;
+    const v = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : undefined; };
+    const c = {};
+    const ci = v("gClientId"); if (ci !== undefined) c.clientId = ci;
+    const di = v("gDriveId"); if (di !== undefined) c.driveId = di;
+    const ra = v("gRacine"); if (ra !== undefined) c.racineNom = ra;
+    const q = v("gQuery"); if (q !== undefined) c.query = q;
+    PNG.google.setCfg(c);
+  }
+  function gLog(line, reset) {
+    const box = document.getElementById("googleLog");
+    if (!box) return;
+    box.classList.remove("hidden");
+    const t = new Date().toLocaleTimeString("fr-FR");
+    box.textContent = (reset ? "" : box.textContent + "\n") + "[" + t + "] " + line;
+    box.scrollTop = box.scrollHeight;
+  }
 
   /* ---- Fournisseurs : modales d'édition et d'import ---------------- */
   function ouvrirFournDossierModal(key) {
@@ -582,6 +629,12 @@
     if (el.id === "socQ") {
       PNG._socQ = el.value;
       clearTimeout(_filtreT); _filtreT = setTimeout(() => { render(); const f = document.getElementById("socQ"); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); } }, 250);
+      return;
+    }
+    // Config Google : persiste la saisie au fil de l'eau (sans re-render)
+    if (el.id === "gClientId" || el.id === "gDriveId" || el.id === "gRacine" || el.id === "gQuery") {
+      const map = { gClientId: "clientId", gDriveId: "driveId", gRacine: "racineNom", gQuery: "query" };
+      if (PNG.google) PNG.google.setCfg({ [map[el.id]]: el.value.trim() });
       return;
     }
   });

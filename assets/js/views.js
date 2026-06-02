@@ -285,6 +285,65 @@ PNG.views = (function () {
   }
 
   /* ===================== COLLECTE PAR EMAIL ======================== */
+  /* Panneau « Connexion Gmail + Google Drive » (OAuth navigateur, sans mot de passe) */
+  function gmailPanel() {
+    const cfg = PNG.google.getCfg();
+    const connecte = PNG.google.isConnected();
+    const compte = PNG.google.compteConnecte();
+    const driveLien = "https://drive.google.com/drive/folders/" + e(cfg.driveId);
+    return `
+      <div class="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl border border-emerald-200 p-5 mb-5">
+        <div class="flex items-start justify-between gap-3 mb-3">
+          <div>
+            <h3 class="font-semibold text-slate-800 text-sm flex items-center gap-2">📥 Connexion automatique Gmail + Google Drive</h3>
+            <p class="text-xs text-slate-500 mt-0.5">Lit la boîte de collecte → toutes les pièces jointes sont océrisées, créées en factures, puis archivées dans le Drive partagé : <strong>Société ▸ Année ▸ Fournisseur</strong>. Aucun mot de passe — autorisation Google en 1 clic.</p>
+          </div>
+          <span class="text-xs px-2.5 py-1 rounded-full whitespace-nowrap ${connecte ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-600"}">${connecte ? "● Connecté" + (compte ? " : " + e(compte) : "") : "○ Non connecté"}</span>
+        </div>
+
+        <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+          <label class="block sm:col-span-2">
+            <span class="text-[11px] font-medium text-slate-500">ID client OAuth Google <span class="text-slate-400">(Application Web)</span></span>
+            <input id="gClientId" type="text" value="${e(cfg.clientId)}" placeholder="xxxxx.apps.googleusercontent.com" class="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono" />
+          </label>
+          <label class="block">
+            <span class="text-[11px] font-medium text-slate-500">ID du Drive partagé</span>
+            <input id="gDriveId" type="text" value="${e(cfg.driveId)}" class="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono" />
+          </label>
+          <label class="block">
+            <span class="text-[11px] font-medium text-slate-500">Dossier racine (dans le Drive)</span>
+            <input id="gRacine" type="text" value="${e(cfg.racineNom)}" class="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+          </label>
+          <label class="block sm:col-span-2 lg:col-span-4">
+            <span class="text-[11px] font-medium text-slate-500">Filtre Gmail des emails à traiter <span class="text-slate-400">(syntaxe Gmail)</span></span>
+            <input id="gQuery" type="text" value="${e(cfg.query)}" placeholder="has:attachment newer_than:60d" class="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono" />
+          </label>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 mb-2">
+          <button id="btnGoogleConnect" class="bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-50 px-4 py-2 rounded-lg text-sm font-medium">${connecte ? "🔄 Reconnecter" : "🔗 Se connecter à Google"}</button>
+          <button id="btnGoogleSync" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium">⬇️ Synchroniser les factures reçues</button>
+          <button id="btnGoogleTestDrive" class="bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-sm font-medium">📁 Tester l'accès Drive</button>
+          <a href="${driveLien}" target="_blank" rel="noopener" class="text-xs text-emerald-700 hover:underline ml-auto">Ouvrir le Drive partagé ↗</a>
+        </div>
+
+        <pre id="googleLog" class="hidden bg-slate-900 text-emerald-200 text-[11px] leading-relaxed rounded-lg p-3 mt-2 max-h-52 overflow-auto whitespace-pre-wrap font-mono"></pre>
+
+        <details class="mt-3 text-xs text-slate-500">
+          <summary class="cursor-pointer text-emerald-700 font-medium">⚙ Comment obtenir l'ID client OAuth (à faire une seule fois)</summary>
+          <ol class="list-decimal ml-5 mt-2 space-y-1">
+            <li>Ouvrez <a href="https://console.cloud.google.com" target="_blank" rel="noopener" class="text-emerald-700 underline">console.cloud.google.com</a> et créez (ou choisissez) un projet.</li>
+            <li>Menu « API et services » → <strong>Activer</strong> : « Gmail API » et « Google Drive API ».</li>
+            <li>« Écran de consentement OAuth » (type <em>Externe</em>) → ajoutez <strong>votre adresse</strong> comme « utilisateur de test ».</li>
+            <li>« Identifiants » → « Créer des identifiants » → <strong>ID client OAuth</strong> → type « Application Web ».</li>
+            <li>Dans « Origines JavaScript autorisées », ajoutez l'URL où vous ouvrez l'appli (ex. <code>http://localhost:8000</code>).</li>
+            <li>Copiez l'<strong>ID client</strong> (…apps.googleusercontent.com) et collez-le ci-dessus, puis cliquez « Se connecter ».</li>
+          </ol>
+          <p class="mt-2 text-amber-600">ℹ️ L'appli demande l'accès <em>lecture</em> de Gmail et l'accès Drive uniquement pour archiver les factures. Aucun mot de passe n'est stocké.</p>
+        </details>
+      </div>`;
+  }
+
   function collecte() {
     const inbox = S.get().inbox || [];
     const rows = inbox.map((m) => {
@@ -316,6 +375,8 @@ PNG.views = (function () {
           <button id="btnSimEmail" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">✉️ Simuler une réception</button>
         </div>
       </div>
+
+      ${gmailPanel()}
 
       <div class="bg-white rounded-2xl border border-slate-100 p-5 mb-5">
         <h3 class="font-semibold text-slate-700 mb-3 text-sm">Adresses de collecte par société</h3>
