@@ -253,6 +253,35 @@ PNG.google = (function () {
   // Lien d'un dossier Drive
   const lienDossier = (id) => "https://drive.google.com/drive/folders/" + id;
 
+  /* Renvoie le lien DIRECT vers le fichier d'une facture dans le Drive.
+   * 1) si on connaît déjà le lien archivé → on le rend ;
+   * 2) sinon on CHERCHE le fichier par son nom dans le Drive partagé ;
+   * 3) à défaut → lien du Drive partagé. (Couvre emails ET ajouts manuels.) */
+  async function lienFichier(facture) {
+    if (facture && facture.archiveDrive && facture.driveUrl) return facture.driveUrl;
+    const cfg = getCfg();
+    const racineDrive = "https://drive.google.com/drive/folders/" + cfg.driveId;
+    if (!facture || !facture.fichier) return racineDrive;
+    try {
+      if (!isConnected()) await connect();
+      const q = "name='" + echapper(facture.fichier) + "' and trashed=false";
+      const url = "https://www.googleapis.com/drive/v3/files?fields=files(id,webViewLink,modifiedTime)"
+        + "&orderBy=modifiedTime desc&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=drive&driveId="
+        + encodeURIComponent(cfg.driveId) + "&q=" + encodeURIComponent(q);
+      const r = await api(url);
+      if (r.ok) {
+        const j = await r.json();
+        if (j.files && j.files[0]) {
+          // mémorise le lien trouvé sur la facture (prochaine fois : direct)
+          const lien = j.files[0].webViewLink || lienDossier(j.files[0].id);
+          if (PNG.store && PNG.store.setFactureDriveReel) PNG.store.setFactureDriveReel(facture.id, lien, null);
+          return lien;
+        }
+      }
+    } catch (e) { /* fallback ci-dessous */ }
+    return racineDrive;
+  }
+
   /* Archive dans le Drive un fichier ajouté MANUELLEMENT dans le logiciel
    * (upload / photo) — que le script 24/7 ne voit pas (il ne lit que les mails).
    * Range dans Société ▸ Année ▸ Fournisseur et enregistre le lien sur la facture. */
@@ -368,6 +397,6 @@ PNG.google = (function () {
 
   return {
     getCfg, setCfg, connect, isConnected, compteConnecte, gisPret, oublierToken,
-    synchroniser, testerDrive, archiverDirect, lienDossier, DRIVE_DEFAUT,
+    synchroniser, testerDrive, archiverDirect, lienFichier, lienDossier, DRIVE_DEFAUT,
   };
 })();

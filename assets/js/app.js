@@ -283,7 +283,7 @@
 
   /* --------------------- Délégation d'événements ------------------- */
   document.addEventListener("click", (ev) => {
-    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-navfac],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-saisirstatut],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],[data-editfourn],[data-savefourndossier],[data-suppfourn],[data-newfourndossier],[data-fourndetail],[data-fournfac],[data-socdetail],[data-editsoc],[data-savesoc],[data-socfac],#btnAddSoc,#btnScan,#btnSimEmail,#btnGoogleConnect,#btnGoogleSync,#btnGoogleTestDrive,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#btnSaveOcr2,#btnTestGemini,#regReset,#btnImportFourn,#btnAddFourn,#fournImportConfirm,#closeModal,#modalBack,#btnReset");
+    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-navfac],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-saisirstatut],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],[data-editfourn],[data-savefourndossier],[data-suppfourn],[data-newfourndossier],[data-fourndetail],[data-fournfac],[data-socdetail],[data-editsoc],[data-savesoc],[data-socfac],[data-drivefac],#btnAddSoc,#btnScan,#btnSimEmail,#btnGoogleConnect,#btnGoogleSync,#btnGoogleTestDrive,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#btnSaveOcr2,#btnTestGemini,#regReset,#btnImportFourn,#btnAddFourn,#fournImportConfirm,#closeModal,#modalBack,#btnReset");
     if (!t) return;
 
     if (t.id === "modalBack" && ev.target.id === "modalBack") return closeModal();
@@ -449,6 +449,17 @@
         render();
       }).catch((e) => { gLog("❌ " + (e.message || e)); toast("Synchronisation échouée : " + (e.message || e), "#dc2626"); })
         .finally(() => { const b = document.getElementById("btnGoogleSync"); if (b) { b.disabled = false; b.textContent = "⬇️ Synchroniser les factures reçues"; } });
+      return;
+    }
+
+    // ---- Ouvrir CETTE facture dans le Drive (lien direct, recherche par nom au besoin) ----
+    if (t.dataset.drivefac) {
+      const fac = S.get().factures.find((f) => f.id === t.dataset.drivefac);
+      const w = window.open("", "_blank");                       // ouvre tout de suite (anti bloqueur)
+      const racine = "https://drive.google.com/drive/folders/" + PNG.google.getCfg().driveId;
+      if (w) w.document.write("<p style='font-family:sans-serif;padding:20px'>Ouverture de la facture dans le Drive…</p>");
+      PNG.google.lienFichier(fac).then((u) => { if (w) w.location.href = u || racine; })
+        .catch(() => { if (w) w.location.href = racine; });
       return;
     }
 
