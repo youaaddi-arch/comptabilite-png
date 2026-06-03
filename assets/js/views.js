@@ -429,6 +429,9 @@ PNG.views = (function () {
             <button data-navfac="next" data-id="${x.id}" class="text-slate-400 hover:text-blue-600 text-xl px-1" title="Facture suivante (→)">›</button>
           </div>
           <div class="flex items-center gap-3">
+            ${(x.archiveDrive && x.driveUrl)
+              ? `<a href="${e(x.driveUrl)}" target="_blank" rel="noopener" class="text-sm font-medium text-emerald-700 hover:text-emerald-900 flex items-center gap-1" title="Ouvrir le fichier dans Google Drive">📁 Voir dans le Drive</a>`
+              : `<a href="https://drive.google.com/drive/folders/${e((window.PNG && PNG.google) ? PNG.google.getCfg().driveId : "0ACMCgnt8fT87Uk9PVA")}" target="_blank" rel="noopener" class="text-sm font-medium text-slate-500 hover:text-emerald-700 flex items-center gap-1" title="Ouvrir le Drive partagé (le fichier y est rangé par Société ▸ Année ▸ Fournisseur)">📁 Ouvrir le Drive</a>`}
             <button data-suppfac="${x.id}" class="text-red-500 hover:text-red-700 text-sm font-medium flex items-center gap-1" title="Supprimer la facture et son écriture">🗑 Supprimer</button>
             <button id="closeModal" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
           </div>
