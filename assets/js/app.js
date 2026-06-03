@@ -247,6 +247,14 @@
       if (location.hash.slice(1).split("/")[0] !== "factures") location.hash = "#factures/a_saisir";
       render();
       setTimeout(() => openModal(f.id), 150);
+      // Archivage RÉEL dans le Drive (le script 24/7 ne voit que les emails).
+      // On archive donc ici les factures ajoutées à la main, si Google est connecté.
+      if (PNG.google && PNG.google.isConnected()) {
+        PNG.google.archiverDirect(file, f).then(() => { toast("📁 Facture archivée dans le Drive ✓", "#059669"); render(); })
+          .catch((e) => { toast("Archivage Drive impossible : " + (e.message || e), "#dc2626"); });
+      } else {
+        toast("ℹ️ Connectez Google (Collecte) pour archiver aussi dans le Drive", "#64748b");
+      }
     } catch (err) {
       ocrOverlayClose();
       // On crée quand même la facture pour montrer l'aperçu + le diagnostic

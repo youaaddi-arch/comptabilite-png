@@ -41,6 +41,7 @@ PNG.google = (function () {
       query: "has:attachment newer_than:60d",
       autoSync: false,             // synchro auto périodique (tant que l'onglet est ouvert)
       autoSyncMin: 5,              // intervalle en minutes
+      archiverDrive: false,        // le logiciel archive-t-il dans le Drive ? (non : le script 24/7 s'en charge)
       processed: [],                // ids de messages Gmail déjà traités (anti-doublon)
     };
     try { return Object.assign(def, JSON.parse(localStorage.getItem(CFG_KEY) || "{}")); }
@@ -60,12 +61,26 @@ PNG.google = (function () {
   }
 
   /* ----------------------- OAuth (Google Identity Services) ---------- */
+  const TOK_KEY = "compta-png-google-tok";
   let _token = null;          // jeton d'accès en mémoire
+  let _tokenExp = 0;          // expiration (ms epoch)
   let _tokenClient = null;
   let _email = null;          // adresse connectée
 
+  // Restaure un jeton encore valide (connexion « permanente » entre rechargements)
+  try {
+    const _raw = localStorage.getItem(TOK_KEY);
+    if (_raw) { const o = JSON.parse(_raw); if (o && o.t && o.e > Date.now() + 10000) { _token = o.t; _tokenExp = o.e; _email = o.m || null; } }
+  } catch (e) {}
+  function sauverToken(tok, expiresInSec, email) {
+    _token = tok; _tokenExp = Date.now() + ((expiresInSec || 3500) * 1000);
+    if (email) _email = email;
+    try { localStorage.setItem(TOK_KEY, JSON.stringify({ t: _token, e: _tokenExp, m: _email })); } catch (e) {}
+  }
+  function oublierToken() { _token = null; _tokenExp = 0; try { localStorage.removeItem(TOK_KEY); } catch (e) {} }
+
   const gisPret = () => !!(window.google && google.accounts && google.accounts.oauth2);
-  const isConnected = () => !!_token;
+  const isConnected = () => !!_token && _tokenExp > Date.now();
   const compteConnecte = () => _email;
 
   function connect() {
@@ -79,19 +94,20 @@ PNG.google = (function () {
           scope: SCOPES,
           callback: (resp) => {
             if (resp && resp.access_token) {
-              _token = resp.access_token;
-              // récupère l'adresse connectée (pour affichage)
+              sauverToken(resp.access_token, parseInt(resp.expires_in) || 3500);
+              // récupère l'adresse connectée (pour affichage + persistance)
               fetch("https://gmail.googleapis.com/gmail/v1/users/me/profile", { headers: authH() })
                 .then((r) => r.ok ? r.json() : null)
-                .then((p) => { if (p && p.emailAddress) _email = p.emailAddress; resolve({ token: _token, email: _email }); })
-                .catch(() => resolve({ token: _token, email: null }));
+                .then((p) => { if (p && p.emailAddress) sauverToken(_token, Math.round((_tokenExp - Date.now()) / 1000), p.emailAddress); resolve({ token: _token, email: _email }); })
+                .catch(() => resolve({ token: _token, email: _email }));
             } else {
               reject(new Error((resp && resp.error) ? resp.error : "Autorisation refusée"));
             }
           },
           error_callback: (err) => reject(new Error((err && err.message) || "Connexion Google annulée")),
         });
-        _tokenClient.requestAccessToken({ prompt: _token ? "" : "consent" });
+        // si on a déjà été connecté, tentative silencieuse (sans re-demander le consentement)
+        _tokenClient.requestAccessToken({ prompt: _email ? "" : "consent" });
       } catch (e) { reject(e); }
     });
   }
@@ -237,6 +253,24 @@ PNG.google = (function () {
   // Lien d'un dossier Drive
   const lienDossier = (id) => "https://drive.google.com/drive/folders/" + id;
 
+  /* Archive dans le Drive un fichier ajouté MANUELLEMENT dans le logiciel
+   * (upload / photo) — que le script 24/7 ne voit pas (il ne lit que les mails).
+   * Range dans Société ▸ Année ▸ Fournisseur et enregistre le lien sur la facture. */
+  async function archiverDirect(file, facture, onLog) {
+    const cfg = getCfg();
+    if (!isConnected()) await connect();
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const c = (PNG.utils.companyById(facture.societeId)) || {};
+    const societeNom = (c.code ? c.code + " - " : "") + (c.raisonSociale || facture.societeId);
+    const annee = (facture.dateFacture || PNG.utils.todayISO()).slice(0, 4);  // exercice = année civile
+    const four = facture.fournisseur || "Divers";
+    const { folderId } = await assurerChemin(cfg.driveId, cfg.racineNom, societeNom, annee, four);
+    const up = await televerser(bytes, file.type || "application/octet-stream", file.name, folderId);
+    PNG.store.setFactureDriveReel(facture.id, up.webViewLink || lienDossier(folderId), lienDossier(folderId));
+    if (onLog) onLog("📁 Archivé : " + societeNom + " ▸ " + annee + " ▸ " + four);
+    return up;
+  }
+
   /* ------------------- Test rapide du Drive (sans Gmail) ------------- */
   async function testerDrive(onLog) {
     const cfg = getCfg();
@@ -300,20 +334,24 @@ PNG.google = (function () {
           nbFac++;
           log("   ✓ Facture : " + fac.fournisseur + " · " + (PNG.utils.fmtEUR ? PNG.utils.fmtEUR(fac.montantTTC) : fac.montantTTC));
 
-          // 3) archivage Drive : Société ▸ Année ▸ Fournisseur ▸ fichier
-          try {
-            const c = PNG.utils.companyById(fac.societeId) || {};
-            const societeNom = (c.code ? c.code + " - " : "") + (c.raisonSociale || fac.societeId);
-            const annee = (fac.dateFacture || PNG.utils.todayISO()).slice(0, 4);   // exercice = année civile
-            const four = fac.fournisseur || "Divers";
-            const { folderId } = await assurerChemin(cfg.driveId, cfg.racineNom, societeNom, annee, four);
-            const up = await televerser(bytes, pj.mimeType, pj.filename, folderId);
-            PNG.store.setFactureDriveReel(fac.id, up.webViewLink || lienDossier(folderId), lienDossier(folderId));
-            nbArch++;
-            log("   📁 Archivé : " + societeNom + " ▸ " + annee + " ▸ " + four);
-          } catch (e2) {
-            log("   ⚠️ Archivage Drive échoué : " + e2.message);
-            nbErr++;
+          // 3) archivage Drive — par DÉFAUT laissé au script 24/7 (emails).
+          //    On n'archive ici que si l'option archiverDrive est activée
+          //    (sinon doublons avec le script Apps Script).
+          if (cfg.archiverDrive) {
+            try {
+              const c = PNG.utils.companyById(fac.societeId) || {};
+              const societeNom = (c.code ? c.code + " - " : "") + (c.raisonSociale || fac.societeId);
+              const annee = (fac.dateFacture || PNG.utils.todayISO()).slice(0, 4);   // exercice = année civile
+              const four = fac.fournisseur || "Divers";
+              const { folderId } = await assurerChemin(cfg.driveId, cfg.racineNom, societeNom, annee, four);
+              const up = await televerser(bytes, pj.mimeType, pj.filename, folderId);
+              PNG.store.setFactureDriveReel(fac.id, up.webViewLink || lienDossier(folderId), lienDossier(folderId));
+              nbArch++;
+              log("   📁 Archivé : " + societeNom + " ▸ " + annee + " ▸ " + four);
+            } catch (e2) {
+              log("   ⚠️ Archivage Drive échoué : " + e2.message);
+              nbErr++;
+            }
           }
         } catch (e) {
           log("   ⚠️ Pièce jointe ignorée (" + pj.filename + ") : " + e.message);
@@ -329,7 +367,7 @@ PNG.google = (function () {
   }
 
   return {
-    getCfg, setCfg, connect, isConnected, compteConnecte, gisPret,
-    synchroniser, testerDrive, lienDossier, DRIVE_DEFAUT,
+    getCfg, setCfg, connect, isConnected, compteConnecte, gisPret, oublierToken,
+    synchroniser, testerDrive, archiverDirect, lienDossier, DRIVE_DEFAUT,
   };
 })();
