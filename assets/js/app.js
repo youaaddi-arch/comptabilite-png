@@ -9,11 +9,12 @@
     { route: "factures", label: "Factures à valider", icon: "📄", badge: () => S.facturesAValider() },
     { route: "collecte", label: "Collecte par email", icon: "📥" },
     { route: "registre", label: "Registre factures", icon: "≡" },
+    { route: "validees", label: "Factures validées", icon: "✓" },
     { route: "regler", label: "Factures à régler", icon: "€", badge: () => S.aRegler().length },
     { route: "fournisseurs", label: "Fournisseurs", icon: "🏷️" },
     { route: "banque", label: "Banque & rapprochement", icon: "⇄", badge: () => S.get().transactions.filter(t=>!t.rapproche).length },
     { route: "tva", label: "TVA", icon: "T" },
-    { route: "financements", label: "Financements / ERP", icon: "🎓" },
+    { route: "financements", label: "Factures de vente (CA)", icon: "🧾" },
     { route: "societes", label: "Sociétés", icon: "🏢" },
     { route: "plan", label: "Plan comptable", icon: "≣" },
     { route: "fonctionnalites", label: "Fonctionnalités", icon: "★" },
@@ -62,6 +63,7 @@
       case "collecte": html = V.collecte(); break;
       case "factures": html = V.factures(current.filter); break;
       case "registre": html = V.registre(); break;
+      case "validees": html = V.facturesValidees(); break;
       case "regler": html = V.aReglerView(); break;
       case "fournisseurs": html = V.fournisseurs(); break;
       case "fournisseur": html = V.fournisseurDetail(current.filter, PNG._foPeriode || {}); break;
@@ -229,6 +231,37 @@
   }
   function ocrOverlayClose() { const o = document.getElementById("ocrOverlay"); if (o) o.remove(); }
 
+  // Fichier sélectionné dans la modale mobile (photo/caméra/PDF)
+  let _mobFile = null;
+
+  /* Dépôt mobile RÉEL : OCR de la photo/PDF -> facture + paiement + archivage */
+  async function traiterMobile(file, opts) {
+    if (!PNG.ocr) { toast("Module OCR non chargé", "#dc2626"); return; }
+    ocrOverlay("Lecture de la facture…", 0.05);
+    try {
+      const res = await PNG.ocr.analyser(file, (p, m) => ocrOverlay(m, p));
+      ocrOverlayClose();
+      const f = S.creerDepuisOCR(res.champs, {
+        societeId: opts.societeId || undefined, source: "scan",
+        fichier: file.name, apercu: res.apercu, apercus: res.apercus,
+      });
+      if (opts.salarie) { f.deposePar = opts.salarie; S.save(); }
+      if (opts.statutPaiement === "paye" && opts.modePaiement) S.saisirPaiement(f.id, opts.modePaiement, opts.datePaiement);
+      const c = PNG.utils.companyById(f.societeId);
+      toast(`📱 Facture déposée : ${f.fournisseur || "?"} → ${c ? c.code : "?"}`, "#0f172a");
+      if (location.hash.slice(1).split("/")[0] !== "factures") location.hash = "#factures/a_saisir";
+      render(); setTimeout(() => openModal(f.id), 150);
+      if (PNG.google && PNG.google.isConnected()) {
+        PNG.google.archiverDirect(file, f).then(() => { toast("📁 Facture archivée dans le Drive ✓", "#059669"); render(); }).catch(() => {});
+      }
+    } catch (err) {
+      ocrOverlayClose();
+      const f = S.creerDepuisOCR({ fournisseur: "", texteBrut: "ERREUR OCR : " + (err && err.message ? err.message : err), moteur: "échec" }, { source: "scan", fichier: file.name });
+      toast("OCR en échec : ouvrez la fiche → Diagnostic OCR", "#dc2626");
+      render(); setTimeout(() => openModal(f.id), 150);
+    }
+  }
+
   async function traiterFichier(file) {
     if (!PNG.ocr) { toast("Module OCR non chargé", "#dc2626"); return; }
     ocrOverlay("Lecture du fichier…", 0.05);
@@ -283,7 +316,7 @@
 
   /* --------------------- Délégation d'événements ------------------- */
   document.addEventListener("click", (ev) => {
-    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-navfac],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-saisirstatut],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],[data-editfourn],[data-savefourndossier],[data-suppfourn],[data-newfourndossier],[data-fourndetail],[data-fournfac],[data-socdetail],[data-editsoc],[data-savesoc],[data-socfac],[data-drivefac],#btnAddSoc,#btnScan,#btnSimEmail,#btnGoogleConnect,#btnGoogleSync,#btnGoogleTestDrive,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#btnSaveOcr2,#btnTestGemini,#regReset,#btnImportFourn,#btnAddFourn,#fournImportConfirm,#closeModal,#modalBack,#btnReset");
+    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-navfac],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-saisirstatut],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],[data-editfourn],[data-savefourndossier],[data-suppfourn],[data-newfourndossier],[data-fourndetail],[data-fournfac],[data-pipefiltre],[data-socdetail],[data-editsoc],[data-savesoc],[data-socfac],[data-drivefac],#btnAddSoc,#btnScan,#btnSimEmail,#btnGoogleConnect,#btnGoogleSync,#btnGoogleTestDrive,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#btnSaveOcr2,#btnTestGemini,#regReset,#btnImportFourn,#btnAddFourn,#fournImportConfirm,#closeModal,#modalBack,#btnReset");
     if (!t) return;
 
     if (t.id === "modalBack" && ev.target.id === "modalBack") return closeModal();
@@ -405,15 +438,16 @@
     if (t.id === "btnVerifPaie") { const n = S.verifierTousPaiements(); toast(n ? `${n} paiement(s) vérifié(s) en banque ✓` : "Aucun paiement en attente de vérification", n ? "#059669" : "#64748b"); render(); return; }
     if (t.id === "btnDeposeMobile") { openMobileModal(); return; }
     if (t.id === "mobEnvoyer") {
+      if (!_mobFile) { toast("Prends une photo ou importe une photo/PDF d'abord", "#dc2626"); return; }
       const soc = (document.getElementById("mobSoc")||{}).value;
       const salarie = (document.getElementById("mobSalarie")||{}).value || "Salarié (mobile)";
       const paye = document.querySelector('input[name="mobPaie"]:checked');
       const opts = { societeId: soc, salarie };
       if (paye && paye.value === "paye") { opts.statutPaiement = "paye"; opts.modePaiement = (document.getElementById("mobMode")||{}).value || "cb"; opts.datePaiement = (document.getElementById("mobDate")||{}).value; }
-      const f = S.deposerMobile(opts);
+      const file = _mobFile; _mobFile = null;
       closeModal();
-      toast(`📱 Facture envoyée : ${f.fournisseur} → ${PNG.utils.companyById(f.societeId).code}`, "#0f172a");
-      render(); setTimeout(() => openModal(f.id), 150); return;
+      traiterMobile(file, opts);
+      return;
     }
 
     if (t.id === "btnScan") { ouvrirFichier(); return; }
@@ -505,6 +539,9 @@
     if (t.id === "btnAddFourn") { ouvrirFournDossierModal(null); return; }
     if (t.dataset.fourndetail) { PNG._foPeriode = {}; location.hash = "#fournisseur/" + encodeURIComponent(t.dataset.fourndetail); return; }
     if (t.dataset.fournfac) { location.hash = "#facturesfiltre/" + encodeURIComponent("fourn|" + t.dataset.fournfac); return; }
+
+    // ---- Pipeline du registre : clic sur une étape = filtre par statut ----
+    if (t.dataset.pipefiltre !== undefined) { PNG._regFiltre.statut = t.dataset.pipefiltre; render(); return; }
 
     // ---- Sociétés : détail / modifier / ajouter / liste factures ----
     if (t.dataset.socdetail) { PNG._scPeriode = {}; location.hash = "#societe/" + encodeURIComponent(t.dataset.socdetail); return; }
@@ -647,6 +684,12 @@
       if (d) d.classList.toggle("hidden", el.value !== "paye");
     }
     if (el.id === "globalSoc") { S.setScope(el.value); render(); }
+    if (el.id === "mobCam" || el.id === "mobFile") {
+      if (el.files && el.files[0]) _mobFile = el.files[0];
+      const n = document.getElementById("mobFileName");
+      if (n && _mobFile) n.textContent = "✓ " + _mobFile.name;
+      return;
+    }
     if (el.id === "gAutoSync") { PNG.google.setCfg({ autoSync: el.checked }); demarrerAutoSync(); toast(el.checked ? "Synchro automatique activée ✓" : "Synchro automatique désactivée", el.checked ? "#059669" : "#64748b"); return; }
     if (el.id === "gAutoSyncMin") { PNG.google.setCfg({ autoSyncMin: parseInt(el.value) || 5 }); demarrerAutoSync(); return; }
   });
@@ -668,6 +711,12 @@
     if (el.id === "socQ") {
       PNG._socQ = el.value;
       clearTimeout(_filtreT); _filtreT = setTimeout(() => { render(); const f = document.getElementById("socQ"); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); } }, 250);
+      return;
+    }
+    if (el.id === "valQ" || el.id === "reglerQ") {
+      if (el.id === "valQ") PNG._valQ = el.value; else PNG._reglerQ = el.value;
+      const id = el.id;
+      clearTimeout(_filtreT); _filtreT = setTimeout(() => { render(); const f = document.getElementById(id); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); } }, 250);
       return;
     }
     // Config Google : persiste la saisie au fil de l'eau (sans re-render)

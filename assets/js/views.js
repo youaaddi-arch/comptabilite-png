@@ -688,8 +688,8 @@ PNG.views = (function () {
     const rf = S.repartitionFinanceurs();
     return `
       ${scopeBanner()}
-      <div class="mb-6"><h1 class="text-2xl font-bold text-slate-800">Financements & ERP</h1>
-      <p class="text-slate-500 text-sm">Dossiers de financement · numéros OPCO / CPF / France Travail (POEI) · facturation</p></div>
+      <div class="mb-6"><h1 class="text-2xl font-bold text-slate-800">Factures de vente (chiffre d'affaires)</h1>
+      <p class="text-slate-500 text-sm">Nos factures clients / produits : dossiers financés OPCO · CPF · France Travail (POEI) · entreprises — ce que NOUS facturons.</p></div>
       <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
         ${PNG.financeurs.map((fc) => `<div class="bg-white rounded-xl p-3 border border-slate-100 text-center"><p class="text-xs text-slate-400">${fc.code}</p><p class="text-lg font-bold" style="color:${fc.couleur}">${U.fmtEUR(rf[fc.code]||0)}</p></div>`).join("")}
       </div>
@@ -948,6 +948,38 @@ PNG.views = (function () {
     });
   }
 
+  /* Pipeline (entonnoir) des factures : 4 étapes + montants TTC */
+  function pipelineFactures(all) {
+    const validee = (f) => f.statut === "brouillon" || f.statut === "comptabilise";
+    const grp = {
+      valider: all.filter((f) => f.statut === "a_valider" || f.statut === "ocr"),
+      regler: all.filter((f) => validee(f) && f.statutPaiement === "a_payer"),
+      rapprocher: all.filter((f) => f.statutPaiement === "paye_attente" && !f.rapproche),
+      rapprochee: all.filter((f) => f.rapproche || f.statutPaiement === "paye_verifie"),
+    };
+    const som = (a) => a.reduce((s, f) => s + (f.montantTTC || 0), 0);
+    const carte = (titre, arr, couleur, filtre) => `
+      <div class="flex-1 min-w-[150px] bg-white rounded-xl border border-slate-100 p-3 ${filtre ? "cursor-pointer hover:border-blue-300 hover:shadow-sm" : ""}" ${filtre ? `data-pipefiltre="${filtre}"` : ""}>
+        <p class="text-[11px] font-medium text-slate-500 leading-tight">${titre}</p>
+        <p class="text-xl font-bold mt-1" style="color:${couleur}">${U.fmtEUR(som(arr))}</p>
+        <p class="text-[11px] text-slate-400">${arr.length} facture(s)</p>
+      </div>`;
+    const fleche = `<div class="self-center text-slate-300 text-xl px-1 hidden sm:block">→</div>`;
+    return `
+      <div class="bg-slate-50 rounded-2xl border border-slate-100 p-3 mb-3">
+        <p class="text-xs font-semibold text-slate-600 mb-2">Pipeline des factures</p>
+        <div class="flex gap-2 flex-wrap">
+          ${carte("À valider", grp.valider, "#7c3aed", "")}
+          ${fleche}
+          ${carte("Validée — à régler", grp.regler, "#dc2626", "a_payer")}
+          ${fleche}
+          ${carte("Validée réglée — à rapprocher", grp.rapprocher, "#d97706", "paye_attente")}
+          ${fleche}
+          ${carte("Validée réglée — rapprochée", grp.rapprochee, "#059669", "paye_verifie")}
+        </div>
+      </div>`;
+  }
+
   function registre() {
     const all = S.get().factures.filter(S.inScope);
     const list = registreFiltrer(all).slice().sort((a, b) => (b.dateFacture || "").localeCompare(a.dateFacture || ""));
@@ -987,6 +1019,7 @@ PNG.views = (function () {
           <button id="btnDeposeMobile" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl text-sm font-medium">📱 Dépôt mobile</button>
         </div>
       </div>
+      ${pipelineFactures(all)}
       <!-- Barre de recherche + filtres -->
       <div class="bg-white rounded-2xl border border-slate-100 p-3 mb-3">
         <div class="flex gap-2 mb-2 flex-wrap">
@@ -1034,9 +1067,66 @@ PNG.views = (function () {
       <p class="text-xs text-slate-400 mt-2">↔ = réglé par une autre société du groupe. La date de décaissement vient du rapprochement bancaire (peut différer de la date de règlement saisie).</p>`;
   }
 
+  /* ============ FACTURES VALIDÉES : tableau complet + lien Drive ===== */
+  function facturesValidees() {
+    PNG._valQ = PNG._valQ || "";
+    const q = (PNG._valQ || "").toLowerCase().trim();
+    let list = S.get().factures.filter(S.inScope).filter((f) => f.statut === "brouillon" || f.statut === "comptabilise");
+    if (q) list = list.filter((x) => [x.fournisseur, x.numeroFacture, x.compteCharge, x.fournisseurSiren, String(x.montantTTC), String(x.montantHT), (U.companyById(x.societeId) || {}).raisonSociale].join(" ").toLowerCase().includes(q));
+    list = list.slice().sort((a, b) => (b.dateFacture || "").localeCompare(a.dateFacture || ""));
+    const d = (v) => v ? U.fmtDate(v) : `<span class="text-slate-300">—</span>`;
+    const rows = list.map((x) => {
+      const sp = U.STATUT_PAIEMENT[x.statutPaiement] || U.STATUT_PAIEMENT.a_payer;
+      return `<tr class="border-t border-slate-100 hover:bg-slate-50">
+        <td class="py-2.5 pl-3 cursor-pointer" data-open="${x.id}"><p class="text-sm font-medium text-slate-700">${e(x.fournisseur)}</p><p class="text-[10px] text-slate-400">${societeChip(x.societeId)}</p></td>
+        <td class="py-2.5 text-xs text-slate-500">${e(x.numeroFacture)}</td>
+        <td class="py-2.5 text-xs">${d(x.dateFacture)}</td>
+        <td class="py-2.5 text-xs">${d(x.dateReglement)}</td>
+        <td class="py-2.5 text-right text-sm">${U.fmtEUR(x.montantHT)}</td>
+        <td class="py-2.5 text-right text-xs text-slate-500">${U.fmtEUR(x.montantTVA)}</td>
+        <td class="py-2.5 text-right text-sm font-medium">${U.fmtEUR(x.montantTTC)}</td>
+        <td class="py-2.5 text-center"><span class="font-mono text-xs">${e(x.compteCharge)}</span></td>
+        <td class="py-2.5 text-center text-xs">${badge(sp.label, sp.cls)}${x.rapproche ? ` <span class="text-[9px] text-emerald-600" title="Rapproché">↔</span>` : ""}</td>
+        <td class="py-2.5 text-center"><button data-drivefac="${x.id}" class="text-emerald-600 hover:text-emerald-800" title="Voir dans le Drive">📁</button></td>
+      </tr>`;
+    }).join("");
+    const tHT = list.reduce((s, x) => s + x.montantHT, 0), tTVA = list.reduce((s, x) => s + x.montantTVA, 0), tTTC = list.reduce((s, x) => s + x.montantTTC, 0);
+    return `
+      ${scopeBanner()}
+      <div class="mb-4"><h1 class="text-2xl font-bold text-slate-800">Factures validées</h1>
+      <p class="text-slate-500 text-sm">Toutes les factures validées (brouillon + comptabilisées) avec leurs montants et le lien Drive · ${list.length} facture(s)</p></div>
+      <div class="grid grid-cols-3 gap-3 mb-4">
+        ${kpiCard("Total HT", U.fmtEUR(tHT), `${list.length} factures`, "#2563eb", "HT")}
+        ${kpiCard("Total TVA", U.fmtEUR(tTVA), "déductible", "#7c3aed", "TVA")}
+        ${kpiCard("Total TTC", U.fmtEUR(tTTC), "validé", "#059669", "TTC")}
+      </div>
+      <div class="mb-3">
+        <input id="valQ" value="${e(PNG._valQ)}" placeholder="🔎 Rechercher (fournisseur, n°, montant, compte, société…)" class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
+      </div>
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-x-auto">
+        <table class="w-full min-w-[900px]">
+          <thead><tr class="text-[11px] text-slate-400 text-left bg-slate-50">
+            <th class="font-medium py-2 pl-3">Fournisseur / société</th><th class="font-medium py-2">N°</th>
+            <th class="font-medium py-2">Date fact.</th><th class="font-medium py-2">Règlement</th>
+            <th class="font-medium py-2 text-right">HT</th><th class="font-medium py-2 text-right">TVA</th><th class="font-medium py-2 text-right">TTC</th>
+            <th class="font-medium py-2 text-center">Compte</th><th class="font-medium py-2 text-center">Statut</th><th class="font-medium py-2 text-center">Drive</th>
+          </tr></thead>
+          <tbody>${rows || `<tr><td colspan="10" class="text-center py-8 text-slate-400">Aucune facture validée</td></tr>`}</tbody>
+          <tfoot><tr class="border-t-2 border-slate-200 bg-slate-50 font-semibold text-sm">
+            <td class="py-2.5 pl-3" colspan="4">TOTAL (${list.length})</td>
+            <td class="py-2.5 text-right">${U.fmtEUR(tHT)}</td><td class="py-2.5 text-right">${U.fmtEUR(tTVA)}</td><td class="py-2.5 text-right">${U.fmtEUR(tTTC)}</td><td colspan="3"></td>
+          </tr></tfoot>
+        </table>
+      </div>`;
+  }
+
   /* ===================== FACTURES À RÉGLER ======================== */
   function aReglerView() {
-    const list = S.aRegler().filter(S.inScope).slice().sort((a, b) => (a.echeance || "").localeCompare(b.echeance || ""));
+    PNG._reglerQ = PNG._reglerQ || "";
+    const q = (PNG._reglerQ || "").toLowerCase().trim();
+    let list = S.aRegler().filter(S.inScope);
+    if (q) list = list.filter((x) => [x.fournisseur, x.numeroFacture, String(x.montantTTC), String(x.montantHT), (U.companyById(x.societeId) || {}).raisonSociale].join(" ").toLowerCase().includes(q));
+    list = list.slice().sort((a, b) => (a.echeance || "").localeCompare(b.echeance || ""));
     const total = list.reduce((s, x) => s + x.montantTTC, 0);
     const today = U.todayISO();
     const rows = list.map((x) => {
@@ -1058,6 +1148,9 @@ PNG.views = (function () {
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         ${kpiCard("Total à régler", U.fmtEUR(total), `${list.length} facture(s)`, "#dc2626", "€")}
         ${kpiCard("En retard", list.filter(x=>x.echeance && x.echeance < today).length, "échéance dépassée", "#ea580c", "!")}
+      </div>
+      <div class="mb-3">
+        <input id="reglerQ" value="${e(PNG._reglerQ)}" placeholder="🔎 Rechercher (fournisseur, n°, montant…)" class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" />
       </div>
       <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-x-auto">
         <table class="w-full min-w-[680px]">
@@ -1314,8 +1407,18 @@ PNG.views = (function () {
           <button id="closeModal" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
         </div>
         <div class="p-5 space-y-3">
-          <p class="text-xs text-slate-500">Le salarié photographie la facture, choisit la <strong>société</strong> (boîte) et indique si elle est payée.</p>
-          <div class="border-2 border-dashed border-slate-200 rounded-xl py-8 text-center text-slate-400 text-sm">📷 Prendre / importer la photo<br><span class="text-xs">(simulée pour la démo)</span></div>
+          <p class="text-xs text-slate-500">Le salarié <strong>prend la facture en photo</strong>, ou importe une <strong>photo / un PDF</strong> depuis son téléphone. L'OCR + l'archivage Drive sont automatiques.</p>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="flex flex-col items-center justify-center gap-1 border-2 border-dashed border-blue-200 rounded-xl py-4 text-blue-600 text-sm cursor-pointer hover:bg-blue-50">
+              <span class="text-2xl">📷</span> Prendre en photo
+              <input id="mobCam" type="file" accept="image/*" capture="environment" class="hidden">
+            </label>
+            <label class="flex flex-col items-center justify-center gap-1 border-2 border-dashed border-slate-200 rounded-xl py-4 text-slate-600 text-sm cursor-pointer hover:bg-slate-50">
+              <span class="text-2xl">📎</span> Importer (photo/PDF)
+              <input id="mobFile" type="file" accept="image/*,application/pdf" class="hidden">
+            </label>
+          </div>
+          <p id="mobFileName" class="text-xs text-emerald-600 text-center min-h-[1rem] truncate"></p>
           <label class="block text-xs text-slate-500">Société destinataire</label>
           <select id="mobSoc" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm">${optionsSoc}</select>
           <label class="block text-xs text-slate-500">Votre nom</label>
@@ -1506,5 +1609,5 @@ PNG.views = (function () {
       </div>`;
   }
 
-  return { dashboard, dashboardCharts, factures, factureModal, collecte, banque, tvaView, financements, societes, societeModal, societeDetail, societeDetailCharts, plan, fonctionnalites, registre, aReglerView, facturesFiltre, fournisseurs, fournisseurDetail, fournisseurDetailCharts, fournDossierModal, importFournModal, mobileModal, rapproManuelModal, nouveauFournModal, renderFournResults, ocrSettings };
+  return { dashboard, dashboardCharts, factures, factureModal, collecte, banque, tvaView, financements, societes, societeModal, societeDetail, societeDetailCharts, plan, fonctionnalites, registre, facturesValidees, aReglerView, facturesFiltre, fournisseurs, fournisseurDetail, fournisseurDetailCharts, fournDossierModal, importFournModal, mobileModal, rapproManuelModal, nouveauFournModal, renderFournResults, ocrSettings };
 })();
