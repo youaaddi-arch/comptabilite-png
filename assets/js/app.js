@@ -6,15 +6,21 @@
 
   const NAV = [
     { route: "dashboard", label: "Tableau de bord", icon: "▦" },
-    { route: "factures", label: "Factures à valider", icon: "📄", badge: () => S.facturesAValider() },
-    { route: "collecte", label: "Collecte par email", icon: "📥" },
-    { route: "registre", label: "Registre factures", icon: "≡" },
-    { route: "validees", label: "Factures validées", icon: "✓" },
-    { route: "regler", label: "Factures à régler", icon: "€", badge: () => S.aRegler().length },
+    { section: "Factures d'achat" },
+    { route: "registre", label: "Factures d'achat", icon: "≡" },
+    { route: "factures", label: "À valider (charger ici)", icon: "📄", badge: () => S.facturesAValider() },
+    { route: "validees", label: "Validées", icon: "✓" },
+    { route: "achatrappro", label: "Rapprochées", icon: "↔" },
+    { route: "regler", label: "À régler", icon: "€", badge: () => S.aRegler().length },
     { route: "fournisseurs", label: "Fournisseurs", icon: "🏷️" },
     { route: "banque", label: "Banque & rapprochement", icon: "⇄", badge: () => S.get().transactions.filter(t=>!t.rapproche).length },
     { route: "tva", label: "TVA", icon: "T" },
-    { route: "financements", label: "Factures de vente (CA)", icon: "🧾" },
+    { section: "Factures de vente" },
+    { route: "financements", label: "Registre CA", icon: "🧾" },
+    { soon: true, label: "Ventes rapprochées (bientôt)", icon: "↔" },
+    { soon: true, label: "Ventes non réglées (bientôt)", icon: "€" },
+    { section: "Outils" },
+    { route: "collecte", label: "Collecte (Gmail/Drive)", icon: "📥" },
     { route: "societes", label: "Sociétés", icon: "🏢" },
     { route: "plan", label: "Plan comptable", icon: "≣" },
     { route: "fonctionnalites", label: "Fonctionnalités", icon: "★" },
@@ -34,6 +40,9 @@
   function renderSidebar() {
     const el = document.getElementById("nav");
     el.innerHTML = NAV.map((n) => {
+      if (n.section) return `<p class="px-3 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">${n.section}</p>`;
+      if (n.soon) return `<span class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-300 cursor-not-allowed" title="Bientôt disponible">
+        <span class="w-5 text-center">${n.icon}</span><span class="flex-1">${n.label}</span></span>`;
       const active = current.route === n.route;
       const b = n.badge ? n.badge() : 0;
       return `<a href="#${n.route}" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition ${active ? "bg-blue-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"}">
@@ -64,6 +73,7 @@
       case "factures": html = V.factures(current.filter); break;
       case "registre": html = V.registre(); break;
       case "validees": html = V.facturesValidees(); break;
+      case "achatrappro": html = V.facturesRapprochees(); break;
       case "regler": html = V.aReglerView(); break;
       case "fournisseurs": html = V.fournisseurs(); break;
       case "fournisseur": html = V.fournisseurDetail(current.filter, PNG._foPeriode || {}); break;
@@ -316,7 +326,7 @@
 
   /* --------------------- Délégation d'événements ------------------- */
   document.addEventListener("click", (ev) => {
-    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-navfac],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-saisirstatut],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],[data-editfourn],[data-savefourndossier],[data-suppfourn],[data-newfourndossier],[data-fourndetail],[data-fournfac],[data-pipefiltre],[data-socdetail],[data-editsoc],[data-savesoc],[data-socfac],[data-drivefac],#btnAddSoc,#btnScan,#btnSimEmail,#btnGoogleConnect,#btnGoogleSync,#btnGoogleTestDrive,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#btnSaveOcr2,#btnTestGemini,#regReset,#btnImportFourn,#btnAddFourn,#fournImportConfirm,#closeModal,#modalBack,#btnReset");
+    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-navfac],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-saisirstatut],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],[data-editfourn],[data-savefourndossier],[data-suppfourn],[data-newfourndossier],[data-fourndetail],[data-fournfac],[data-pipeetat],[data-regvue],[data-socdetail],[data-editsoc],[data-savesoc],[data-socfac],[data-drivefac],#btnAddSoc,#btnScan,#btnSimEmail,#btnGoogleConnect,#btnGoogleSync,#btnGoogleTestDrive,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#btnSaveOcr2,#btnTestGemini,#regReset,#btnImportFourn,#btnAddFourn,#fournImportConfirm,#closeModal,#modalBack,#btnReset");
     if (!t) return;
 
     if (t.id === "modalBack" && ev.target.id === "modalBack") return closeModal();
@@ -540,8 +550,9 @@
     if (t.dataset.fourndetail) { PNG._foPeriode = {}; location.hash = "#fournisseur/" + encodeURIComponent(t.dataset.fourndetail); return; }
     if (t.dataset.fournfac) { location.hash = "#facturesfiltre/" + encodeURIComponent("fourn|" + t.dataset.fournfac); return; }
 
-    // ---- Pipeline du registre : clic sur une étape = filtre par statut ----
-    if (t.dataset.pipefiltre !== undefined) { PNG._regFiltre.statut = t.dataset.pipefiltre; render(); return; }
+    // ---- Pipeline du registre : clic sur une étape = filtre + bascule de vue ----
+    if (t.dataset.pipeetat !== undefined) { PNG._regEtat = t.dataset.pipeetat; render(); return; }
+    if (t.dataset.regvue) { PNG._regVue = t.dataset.regvue; render(); return; }
 
     // ---- Sociétés : détail / modifier / ajouter / liste factures ----
     if (t.dataset.socdetail) { PNG._scPeriode = {}; location.hash = "#societe/" + encodeURIComponent(t.dataset.socdetail); return; }
@@ -713,8 +724,8 @@
       clearTimeout(_filtreT); _filtreT = setTimeout(() => { render(); const f = document.getElementById("socQ"); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); } }, 250);
       return;
     }
-    if (el.id === "valQ" || el.id === "reglerQ") {
-      if (el.id === "valQ") PNG._valQ = el.value; else PNG._reglerQ = el.value;
+    if (el.id === "valQ" || el.id === "reglerQ" || el.id === "rapQ") {
+      if (el.id === "valQ") PNG._valQ = el.value; else if (el.id === "reglerQ") PNG._reglerQ = el.value; else PNG._rapQ = el.value;
       const id = el.id;
       clearTimeout(_filtreT); _filtreT = setTimeout(() => { render(); const f = document.getElementById(id); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); } }, 250);
       return;

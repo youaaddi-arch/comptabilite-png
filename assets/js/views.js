@@ -948,46 +948,46 @@ PNG.views = (function () {
     });
   }
 
-  /* Pipeline (entonnoir) des factures : 4 étapes + montants TTC */
-  function pipelineFactures(all) {
-    const validee = (f) => f.statut === "brouillon" || f.statut === "comptabilise";
-    const grp = {
-      valider: all.filter((f) => f.statut === "a_valider" || f.statut === "ocr"),
-      regler: all.filter((f) => validee(f) && f.statutPaiement === "a_payer"),
-      rapprocher: all.filter((f) => f.statutPaiement === "paye_attente" && !f.rapproche),
-      rapprochee: all.filter((f) => f.rapproche || f.statutPaiement === "paye_verifie"),
-    };
+  /* Classe une facture d'achat dans une étape du pipeline */
+  const REG_ETATS = [
+    { k: "valider", label: "À valider", couleur: "#7c3aed" },
+    { k: "regler", label: "Validée — à régler", couleur: "#dc2626" },
+    { k: "rapprocher", label: "Réglée — à rapprocher", couleur: "#d97706" },
+    { k: "rapprochee", label: "Réglée — rapprochée", couleur: "#059669" },
+  ];
+  function etatFacture(f) {
+    if (f.statut === "a_valider" || f.statut === "ocr") return "valider";
+    if (f.rapproche || f.statutPaiement === "paye_verifie") return "rapprochee";
+    if (f.statutPaiement === "paye_attente") return "rapprocher";
+    return "regler";
+  }
+  /* Cartes du pipeline (cliquables → filtre par étape) */
+  function pipelineRegistre(base, actif) {
     const som = (a) => a.reduce((s, f) => s + (f.montantTTC || 0), 0);
-    const carte = (titre, arr, couleur, filtre) => `
-      <div class="flex-1 min-w-[150px] bg-white rounded-xl border border-slate-100 p-3 ${filtre ? "cursor-pointer hover:border-blue-300 hover:shadow-sm" : ""}" ${filtre ? `data-pipefiltre="${filtre}"` : ""}>
-        <p class="text-[11px] font-medium text-slate-500 leading-tight">${titre}</p>
-        <p class="text-xl font-bold mt-1" style="color:${couleur}">${U.fmtEUR(som(arr))}</p>
-        <p class="text-[11px] text-slate-400">${arr.length} facture(s)</p>
-      </div>`;
-    const fleche = `<div class="self-center text-slate-300 text-xl px-1 hidden sm:block">→</div>`;
-    return `
-      <div class="bg-slate-50 rounded-2xl border border-slate-100 p-3 mb-3">
-        <p class="text-xs font-semibold text-slate-600 mb-2">Pipeline des factures</p>
-        <div class="flex gap-2 flex-wrap">
-          ${carte("À valider", grp.valider, "#7c3aed", "")}
-          ${fleche}
-          ${carte("Validée — à régler", grp.regler, "#dc2626", "a_payer")}
-          ${fleche}
-          ${carte("Validée réglée — à rapprocher", grp.rapprocher, "#d97706", "paye_attente")}
-          ${fleche}
-          ${carte("Validée réglée — rapprochée", grp.rapprochee, "#059669", "paye_verifie")}
-        </div>
-      </div>`;
+    const carte = (et) => {
+      const arr = base.filter((f) => etatFacture(f) === et.k);
+      const on = actif === et.k;
+      return `<div data-pipeetat="${et.k}" class="flex-1 min-w-[150px] rounded-xl border p-3 cursor-pointer transition bg-white ${on ? "border-blue-500 ring-2 ring-blue-200" : "border-slate-100 hover:border-blue-300 hover:shadow-sm"}">
+        <p class="text-[11px] font-medium text-slate-500 leading-tight">${et.label}</p>
+        <p class="text-xl font-bold mt-1" style="color:${et.couleur}">${U.fmtEUR(som(arr))}</p>
+        <p class="text-[11px] text-slate-400">${arr.length} facture(s)</p></div>`;
+    };
+    const fleche = `<div class="self-center text-slate-300 text-xl px-1 hidden lg:block">→</div>`;
+    return `<div class="flex gap-2 flex-wrap mb-3">${carte(REG_ETATS[0])}${fleche}${carte(REG_ETATS[1])}${fleche}${carte(REG_ETATS[2])}${fleche}${carte(REG_ETATS[3])}</div>`;
   }
 
   function registre() {
     const all = S.get().factures.filter(S.inScope);
-    const list = registreFiltrer(all).slice().sort((a, b) => (b.dateFacture || "").localeCompare(a.dateFacture || ""));
+    PNG._regVue = PNG._regVue || "liste";
+    PNG._regEtat = PNG._regEtat || "";
+    const base = registreFiltrer(all);
+    let list = base.slice();
+    if (PNG._regEtat) list = list.filter((f) => etatFacture(f) === PNG._regEtat);
+    list.sort((a, b) => (b.dateFacture || "").localeCompare(a.dateFacture || ""));
     const d = (v) => v ? U.fmtDate(v) : `<span class="text-slate-300">—</span>`;
-    const rows = list.map((x) => {
+    const ligne = (x) => {
       const sp = U.STATUT_PAIEMENT[x.statutPaiement] || U.STATUT_PAIEMENT.a_payer;
       const mp = U.modePaiementByCode(x.modePaiement);
-      const cpt = (U.planByNum(x.compteCharge) || {});
       const reglePar = x.regleParSocieteId ? (U.companyById(x.regleParSocieteId) || {}) : null;
       return `<tr class="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" data-open="${x.id}">
         <td class="py-2.5 pl-3"><div class="flex items-center gap-1.5"><span>${srcIcon[x.source]||"📄"}</span><span class="text-sm font-medium text-slate-700">${e(x.fournisseur)}</span>${x.doublonDe?`<span class="text-[9px] bg-red-100 text-red-700 px-1 rounded">DBL</span>`:""}</div>
@@ -1003,34 +1003,44 @@ PNG.views = (function () {
         <td class="py-2.5 text-right text-sm font-medium">${U.fmtEUR(x.montantTTC)}</td>
         <td class="py-2.5 text-center"><span class="font-mono text-xs">${e(x.compteCharge)}</span></td>
         <td class="py-2.5 text-center text-xs">${(x.rapproche && x.statutPaiement === "a_payer") ? badge("🔴 À payer / rapproché", "bg-red-100 text-red-700") : badge(sp.label, sp.cls)}${(x.rapproche && x.statutPaiement !== "a_payer") ? ` <span class="text-[9px] text-emerald-600" title="Rapproché en banque">↔</span>` : ""}</td>
-        <td class="py-2.5 text-center">${x.driveUrl?`<a href="${e(x.driveUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" class="text-blue-600" title="Drive">📁</a>`:""}</td>
-        <td class="py-2.5 text-center"><button data-suppfac="${x.id}" onclick="event.stopPropagation()" class="text-red-400 hover:text-red-600" title="Supprimer">🗑</button></td>
+        <td class="py-2.5 text-center"><button data-drivefac="${x.id}" onclick="event.stopPropagation()" class="text-emerald-600" title="Voir dans le Drive">📁</button></td>
       </tr>`;
-    }).join("");
+    };
+    const rows = list.map(ligne).join("");
     const tHT = list.reduce((s,x)=>s+x.montantHT,0), tTVA=list.reduce((s,x)=>s+x.montantTVA,0), tTTC=list.reduce((s,x)=>s+x.montantTTC,0);
-    const scope = S.getScope();
+
+    // Vue Kanban : 1 colonne par étape
+    const carteK = (x) => `<div data-open="${x.id}" class="bg-white border border-slate-100 rounded-lg p-2.5 mb-2 cursor-pointer hover:border-blue-300 hover:shadow-sm">
+        <div class="flex items-center justify-between gap-1"><span class="text-sm font-medium text-slate-700 truncate">${e(x.fournisseur)}</span><span class="text-sm font-semibold whitespace-nowrap">${U.fmtEUR(x.montantTTC)}</span></div>
+        <p class="text-[10px] text-slate-400 truncate">${societeChip(x.societeId)} · ${e(x.numeroFacture)} · ${x.dateFacture?U.fmtDate(x.dateFacture):"—"}</p></div>`;
+    const colonnes = REG_ETATS.map((et) => {
+      const arr = base.filter((f) => etatFacture(f) === et.k).sort((a,b)=>(b.dateFacture||"").localeCompare(a.dateFacture||""));
+      return `<div class="flex-1 min-w-[230px] bg-slate-50 rounded-xl border border-slate-100 p-2">
+        <div class="flex items-center justify-between px-1 mb-1"><p class="text-xs font-semibold" style="color:${et.couleur}">${et.label}</p><span class="text-[10px] text-slate-400">${arr.length}</span></div>
+        <p class="text-xs font-bold text-slate-600 px-1 mb-2">${U.fmtEUR(arr.reduce((s,f)=>s+f.montantTTC,0))}</p>
+        ${arr.map(carteK).join("") || `<p class="text-[11px] text-slate-300 text-center py-4">—</p>`}</div>`;
+    }).join("");
+
+    const vue = PNG._regVue;
+    const toggle = `<div class="inline-flex rounded-lg border border-slate-200 overflow-hidden text-sm">
+        <button data-regvue="liste" class="px-3 py-1.5 ${vue==="liste"?"bg-blue-600 text-white":"bg-white text-slate-600 hover:bg-slate-50"}">☰ Liste</button>
+        <button data-regvue="kanban" class="px-3 py-1.5 ${vue==="kanban"?"bg-blue-600 text-white":"bg-white text-slate-600 hover:bg-slate-50"}">▤ Kanban</button>
+      </div>`;
+
     return `
       ${scopeBanner()}
       <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
-        <div><h1 class="text-2xl font-bold text-slate-800">Registre des factures</h1>
-        <p class="text-slate-500 text-sm">Recherche et filtres sur tous les champs · ${list.length}/${all.length} facture(s)</p></div>
-        <div class="flex gap-2">
-          <button id="btnVerifPaie" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">🏦 Vérifier paiements (${S.paiementsAVerifier()})</button>
-          <button id="btnDeposeMobile" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl text-sm font-medium">📱 Dépôt mobile</button>
-        </div>
+        <div><h1 class="text-2xl font-bold text-slate-800">Factures d'achat — pipeline</h1>
+        <p class="text-slate-500 text-sm">État des lieux des factures par étape (consultation) · ${list.length}/${all.length} facture(s)</p></div>
+        ${toggle}
       </div>
-      ${pipelineFactures(all)}
+      ${pipelineRegistre(base, PNG._regEtat)}
+      ${PNG._regEtat ? `<button data-pipeetat="" class="text-xs text-blue-600 hover:underline mb-2 inline-block">✕ Voir toutes les étapes</button>` : ""}
       <!-- Barre de recherche + filtres -->
       <div class="bg-white rounded-2xl border border-slate-100 p-3 mb-3">
         <div class="flex gap-2 mb-2 flex-wrap">
           <input id="regQ" value="${e(PNG._regFiltre.q)}" placeholder="🔎 Rechercher (fournisseur, n°, SIREN, montant, société…)" class="flex-1 min-w-[220px] border border-slate-200 rounded-lg px-3 py-2 text-sm" />
           <input id="regFournisseur" value="${e(PNG._regFiltre.fournisseur)}" placeholder="Fournisseur" class="border border-slate-200 rounded-lg px-3 py-2 text-sm w-40" />
-          <select id="regStatut" class="border border-slate-200 rounded-lg px-3 py-2 text-sm">
-            <option value="">Tous statuts</option>
-            <option value="a_payer" ${PNG._regFiltre.statut==="a_payer"?"selected":""}>À payer</option>
-            <option value="paye_attente" ${PNG._regFiltre.statut==="paye_attente"?"selected":""}>À vérifier</option>
-            <option value="paye_verifie" ${PNG._regFiltre.statut==="paye_verifie"?"selected":""}>Payée</option>
-          </select>
           <select id="regSociete" class="border border-slate-200 rounded-lg px-3 py-2 text-sm">
             <option value="">Toutes sociétés</option>
             ${PNG.companies.filter((c)=>S.SOLDES_INIT[c.id]).map((c)=>`<option value="${c.id}" ${PNG._regFiltre.societe===c.id?"selected":""}>${e(c.raisonSociale)}</option>`).join("")}
@@ -1048,23 +1058,24 @@ PNG.views = (function () {
           <button id="regReset" class="ml-auto text-slate-400 hover:text-red-500">✕ Réinitialiser les filtres</button>
         </div>
       </div>
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-x-auto">
+      ${vue === "kanban"
+        ? `<div class="flex gap-2 overflow-x-auto pb-2">${colonnes}</div>`
+        : `<div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-x-auto">
         <table class="w-full min-w-[1100px]">
           <thead><tr class="text-[11px] text-slate-400 text-left bg-slate-50">
             <th class="font-medium py-2 pl-3">Fournisseur / société</th><th class="font-medium py-2">N°</th>
             <th class="font-medium py-2">Date fact.</th><th class="font-medium py-2">Import</th><th class="font-medium py-2">Règlement</th><th class="font-medium py-2">Décaiss.</th>
             <th class="font-medium py-2 text-center">Mode</th>
             <th class="font-medium py-2 text-right">HT</th><th class="font-medium py-2 text-right">TVA</th><th class="font-medium py-2 text-right">TTC</th>
-            <th class="font-medium py-2 text-center">Compte</th><th class="font-medium py-2 text-center">Statut</th><th class="font-medium py-2 text-center">Drive</th><th class="font-medium py-2 text-center"></th>
+            <th class="font-medium py-2 text-center">Compte</th><th class="font-medium py-2 text-center">Statut</th><th class="font-medium py-2 text-center">Drive</th>
           </tr></thead>
-          <tbody>${rows || `<tr><td colspan="14" class="text-center py-8 text-slate-400">Aucune facture</td></tr>`}</tbody>
+          <tbody>${rows || `<tr><td colspan="13" class="text-center py-8 text-slate-400">Aucune facture</td></tr>`}</tbody>
           <tfoot><tr class="border-t-2 border-slate-200 bg-slate-50 font-semibold text-sm">
             <td class="py-2.5 pl-3" colspan="7">TOTAL (${list.length} factures)</td>
-            <td class="py-2.5 text-right">${U.fmtEUR(tHT)}</td><td class="py-2.5 text-right">${U.fmtEUR(tTVA)}</td><td class="py-2.5 text-right">${U.fmtEUR(tTTC)}</td><td colspan="4"></td>
+            <td class="py-2.5 text-right">${U.fmtEUR(tHT)}</td><td class="py-2.5 text-right">${U.fmtEUR(tTVA)}</td><td class="py-2.5 text-right">${U.fmtEUR(tTTC)}</td><td colspan="3"></td>
           </tr></tfoot>
         </table>
-      </div>
-      <p class="text-xs text-slate-400 mt-2">↔ = réglé par une autre société du groupe. La date de décaissement vient du rapprochement bancaire (peut différer de la date de règlement saisie).</p>`;
+      </div>`}`;
   }
 
   /* ============ FACTURES VALIDÉES : tableau complet + lien Drive ===== */
@@ -1116,6 +1127,48 @@ PNG.views = (function () {
             <td class="py-2.5 pl-3" colspan="4">TOTAL (${list.length})</td>
             <td class="py-2.5 text-right">${U.fmtEUR(tHT)}</td><td class="py-2.5 text-right">${U.fmtEUR(tTVA)}</td><td class="py-2.5 text-right">${U.fmtEUR(tTTC)}</td><td colspan="3"></td>
           </tr></tfoot>
+        </table>
+      </div>`;
+  }
+
+  /* ====== FACTURES D'ACHAT RAPPROCHÉES (lettrées en banque) ======= */
+  function facturesRapprochees() {
+    PNG._rapQ = PNG._rapQ || "";
+    const q = (PNG._rapQ || "").toLowerCase().trim();
+    let list = S.get().factures.filter(S.inScope).filter((f) => f.rapproche || f.statutPaiement === "paye_verifie");
+    if (q) list = list.filter((x) => [x.fournisseur, x.numeroFacture, String(x.montantTTC), (U.companyById(x.societeId) || {}).raisonSociale].join(" ").toLowerCase().includes(q));
+    list = list.slice().sort((a, b) => (b.dateDecaissement || b.dateReglement || "").localeCompare(a.dateDecaissement || a.dateReglement || ""));
+    const d = (v) => v ? U.fmtDate(v) : `<span class="text-slate-300">—</span>`;
+    const rows = list.map((x) => {
+      const mp = U.modePaiementByCode(x.modePaiement);
+      return `<tr class="border-t border-slate-100 hover:bg-slate-50">
+        <td class="py-2.5 pl-3 cursor-pointer" data-open="${x.id}"><p class="text-sm font-medium text-slate-700">${e(x.fournisseur)}</p><p class="text-[10px] text-slate-400">${societeChip(x.societeId)} · ${e(x.numeroFacture)}</p></td>
+        <td class="py-2.5 text-xs">${d(x.dateFacture)}</td>
+        <td class="py-2.5 text-xs">${d(x.dateReglement)}</td>
+        <td class="py-2.5 text-xs">${d(x.dateDecaissement)}</td>
+        <td class="py-2.5 text-center text-xs">${mp?mp.icon+" "+mp.libelle.slice(0,4):"—"}</td>
+        <td class="py-2.5 text-right text-sm font-medium">${U.fmtEUR(x.montantTTC)}</td>
+        <td class="py-2.5 text-center">${badge("↔ Rapprochée", "bg-emerald-100 text-emerald-700")}</td>
+        <td class="py-2.5 text-center"><button data-drivefac="${x.id}" class="text-emerald-600" title="Voir dans le Drive">📁</button></td>
+      </tr>`;
+    }).join("");
+    const tot = list.reduce((s, x) => s + x.montantTTC, 0);
+    return `
+      ${scopeBanner()}
+      <div class="mb-4"><h1 class="text-2xl font-bold text-slate-800">Factures d'achat rapprochées</h1>
+      <p class="text-slate-500 text-sm">Factures payées et lettrées avec une écriture bancaire · ${list.length} facture(s)</p></div>
+      <div class="grid grid-cols-2 gap-3 mb-4">
+        ${kpiCard("Total rapproché", U.fmtEUR(tot), `${list.length} facture(s)`, "#059669", "↔")}
+        ${kpiCard("Décaissé (TTC)", U.fmtEUR(tot), "sorties banque lettrées", "#0f172a", "€")}
+      </div>
+      <div class="mb-3"><input id="rapQ" value="${e(PNG._rapQ)}" placeholder="🔎 Rechercher (fournisseur, n°, montant…)" class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" /></div>
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-x-auto">
+        <table class="w-full min-w-[760px]">
+          <thead><tr class="text-[11px] text-slate-400 text-left bg-slate-50">
+            <th class="font-medium py-2 pl-3">Fournisseur / société</th><th class="font-medium py-2">Date fact.</th><th class="font-medium py-2">Règlement</th><th class="font-medium py-2">Décaiss.</th>
+            <th class="font-medium py-2 text-center">Mode</th><th class="font-medium py-2 text-right">TTC</th><th class="font-medium py-2 text-center">Statut</th><th class="font-medium py-2 text-center">Drive</th>
+          </tr></thead>
+          <tbody>${rows || `<tr><td colspan="8" class="text-center py-8 text-slate-400">Aucune facture rapprochée</td></tr>`}</tbody>
         </table>
       </div>`;
   }
@@ -1609,5 +1662,5 @@ PNG.views = (function () {
       </div>`;
   }
 
-  return { dashboard, dashboardCharts, factures, factureModal, collecte, banque, tvaView, financements, societes, societeModal, societeDetail, societeDetailCharts, plan, fonctionnalites, registre, facturesValidees, aReglerView, facturesFiltre, fournisseurs, fournisseurDetail, fournisseurDetailCharts, fournDossierModal, importFournModal, mobileModal, rapproManuelModal, nouveauFournModal, renderFournResults, ocrSettings };
+  return { dashboard, dashboardCharts, factures, factureModal, collecte, banque, tvaView, financements, societes, societeModal, societeDetail, societeDetailCharts, plan, fonctionnalites, registre, facturesValidees, facturesRapprochees, aReglerView, facturesFiltre, fournisseurs, fournisseurDetail, fournisseurDetailCharts, fournDossierModal, importFournModal, mobileModal, rapproManuelModal, nouveauFournModal, renderFournResults, ocrSettings };
 })();
