@@ -642,7 +642,7 @@ PNG.views = (function () {
     const tot = S.tva();
     return `
       <div class="mb-6"><h1 class="text-2xl font-bold text-slate-800">TVA</h1>
-      <p class="text-slate-500 text-sm">TVA collectée / déductible · déclaration CA3 par société · mois en cours</p></div>
+      <p class="text-slate-500 text-sm">TVA déductible (achats) · TVA collectée (ventes) · TVA à déclarer (CA3) — par société, mois en cours</p></div>
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         ${kpiCard("TVA collectée", U.fmtEUR(tot.collectee), "Ventes taxables", "#16a34a", "T")}
         ${kpiCard("TVA déductible", U.fmtEUR(tot.deductible), "Achats", "#2563eb", "T")}
