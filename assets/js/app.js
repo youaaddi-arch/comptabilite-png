@@ -614,7 +614,7 @@
       closeModal(); toast(`Plan importé : ${r.cree} créé(s), ${r.maj} mis à jour ✓`, "#059669"); render(); return;
     }
 
-    if (t.id === "btnReset") { if (confirm("Réinitialiser toutes les données de démonstration ?")) { S.reset(); toast("Données réinitialisées", "#64748b"); render(); } return; }
+    if (t.id === "btnReset") { if (confirm("Vider TOUTES les données (factures, fournisseurs, écritures) et repartir d'une interface vide ?")) { S.reset(); toast("Interface vidée ✓", "#64748b"); render(); } return; }
   });
 
   /* ---- Connexion Google : config + journal en direct --------------- */

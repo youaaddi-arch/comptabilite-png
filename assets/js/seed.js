@@ -199,5 +199,7 @@ PNG.seed = (function () {
   T({ societeId: "dbs", date: "2026-05-27", libelle: "VIR SALAIRES MAI 2026", montant: -19200, categorie: "Salaires" });
   T({ societeId: "pnbs-lille", date: "2026-05-30", libelle: "CB STATION SERVICE TOTAL", montant: -84.20, categorie: "Déplacement" });
 
-  return { factures, dossiers, transactions: tx };
+  // Interface VIDE au démarrage : aucune fausse facture / dossier / écriture.
+  // (Le code de démonstration ci-dessus est conservé mais non utilisé.)
+  return { factures: [], dossiers: [], transactions: [] };
 })();
