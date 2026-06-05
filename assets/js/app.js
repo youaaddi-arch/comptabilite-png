@@ -41,14 +41,14 @@
   function renderSidebar() {
     const el = document.getElementById("nav");
     el.innerHTML = NAV.map((n) => {
-      if (n.section) return `<p class="px-3 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">${n.section}</p>`;
-      if (n.soon) return `<span class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-300 cursor-not-allowed" title="Bientôt disponible">
+      if (n.section) return `<p class="px-3 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">${n.section}</p>`;
+      if (n.soon) return `<span class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-600 cursor-not-allowed" title="Bientôt disponible">
         <span class="w-5 text-center">${n.icon}</span><span class="flex-1">${n.label}</span></span>`;
       const active = current.route === n.route;
       const b = n.badge ? n.badge() : 0;
-      return `<a href="#${n.route}" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition ${active ? "bg-blue-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"}">
+      return `<a href="#${n.route}" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition ${active ? "bg-white/15 text-white shadow-sm" : "text-slate-300 hover:bg-white/10 hover:text-white"}">
         <span class="w-5 text-center">${n.icon}</span><span class="flex-1">${n.label}</span>
-        ${b ? `<span class="text-xs px-1.5 py-0.5 rounded-full ${active ? "bg-white/25" : "bg-amber-100 text-amber-700"}">${b}</span>` : ""}
+        ${b ? `<span class="text-xs px-1.5 py-0.5 rounded-full ${active ? "bg-white/25 text-white" : "bg-amber-400/20 text-amber-200"}">${b}</span>` : ""}
       </a>`;
     }).join("");
   }
