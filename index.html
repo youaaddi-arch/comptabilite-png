@@ -18,7 +18,15 @@
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <link rel="stylesheet" href="assets/css/app.css" />
   <script>
-    tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter','system-ui','sans-serif'] } } } };
+    // Charte PaNo : on remappe la palette "blue" (et "indigo") vers le BLEU NUIT
+    // PaNo, et on ajoute une teinte "gold". Tous les bg-blue-*/text-blue-* du
+    // logiciel deviennent ainsi aux couleurs PaNo, sans tout réécrire.
+    var PANO_NAVY = { 50:'#f1f4f9',100:'#e1e8f1',200:'#c3d0e1',300:'#94a8c7',400:'#5d77a0',500:'#35527d',600:'#1b2a4a',700:'#16223c',800:'#111a2e',900:'#0c1322' };
+    var PANO_GOLD = { 50:'#faf6ee',100:'#f1e7d2',200:'#e4d0a6',300:'#d4b878',400:'#c5a35f',500:'#b9985a',600:'#9c7d44',700:'#7d6336',800:'#5e4b2a',900:'#42351e' };
+    tailwind.config = { theme: { extend: {
+      fontFamily: { sans: ['Inter','system-ui','sans-serif'] },
+      colors: { blue: PANO_NAVY, indigo: PANO_NAVY, gold: PANO_GOLD }
+    } } };
     // Afficheur d'erreur visible (évite la page blanche muette)
     window.addEventListener("error", function (e) {
       var box = document.getElementById("fatalError");
@@ -50,7 +58,7 @@
             <polygon points="50,50 43,57 3,50 43,43" fill="#b9985a"/>
           </svg>
           <div class="leading-none">
-            <p class="leading-none"><span style="color:#1b2a4a;font-weight:800;font-size:20px;letter-spacing:-0.3px">PaNo</span><span class="text-[10px] font-semibold text-amber-600 ml-1.5 align-top">P2P</span></p>
+            <p class="leading-none"><span style="color:#1b2a4a;font-weight:800;font-size:20px;letter-spacing:-0.3px">PaNo</span><span class="text-[10px] font-semibold ml-1.5 align-top" style="color:#b9985a">P2P</span></p>
             <p class="text-[8.5px] tracking-[0.15em] text-slate-400 mt-1">by PARIS NORD GROUPE</p>
           </div>
         </div>
@@ -85,13 +93,13 @@
   <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 text-white text-sm px-4 py-2.5 rounded-xl shadow-lg opacity-0 translate-y-3 transition-all duration-300 z-50" style="background:#1e293b"></div>
 
   <!-- Scripts (ordre de dépendance) — ?v= force le rechargement après chaque mise à jour (anti-cache) -->
-  <script src="assets/js/data.js?v=20260603f"></script>
-  <script src="assets/js/seed.js?v=20260603f"></script>
-  <script src="assets/js/utils.js?v=20260603f"></script>
-  <script src="assets/js/ocr.js?v=20260603f"></script>
-  <script src="assets/js/gdrive.js?v=20260603f"></script>
-  <script src="assets/js/store.js?v=20260603f"></script>
-  <script src="assets/js/views.js?v=20260603f"></script>
-  <script src="assets/js/app.js?v=20260603f"></script>
+  <script src="assets/js/data.js?v=20260603g"></script>
+  <script src="assets/js/seed.js?v=20260603g"></script>
+  <script src="assets/js/utils.js?v=20260603g"></script>
+  <script src="assets/js/ocr.js?v=20260603g"></script>
+  <script src="assets/js/gdrive.js?v=20260603g"></script>
+  <script src="assets/js/store.js?v=20260603g"></script>
+  <script src="assets/js/views.js?v=20260603g"></script>
+  <script src="assets/js/app.js?v=20260603g"></script>
 </body>
 </html>
