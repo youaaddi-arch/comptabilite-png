@@ -9,7 +9,7 @@
   </g>
   <!-- wordmark -->
   <text x="120" y="78" font-size="64" font-weight="700" fill="#1b2a4a" letter-spacing="-1">PaNo</text>
-  <text x="300" y="50" font-size="16" font-weight="700" fill="#b9985a" font-family="Arial, sans-serif" letter-spacing="1">COMPTA</text>
+  <text x="300" y="50" font-size="16" font-weight="700" fill="#b9985a" font-family="Arial, sans-serif" letter-spacing="1">P2P</text>
   <text x="122" y="104" font-size="13" fill="#64748b" font-family="Arial, sans-serif" letter-spacing="3">by PARIS NORD GROUPE</text>
   <line x1="122" y1="112" x2="300" y2="112" stroke="#b9985a" stroke-width="1.5"/>
 </svg>
