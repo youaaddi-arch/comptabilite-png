@@ -47,6 +47,9 @@ PNG.store = (function () {
       fournisseurs: [], // fiches fournisseurs (créées auto)
       societesEdits: {},// modifications de nos sociétés
       societesAjout: [],// sociétés créées manuellement
+      planEdits: {},    // modifications de comptes du plan comptable
+      planAjout: [],    // comptes ajoutés / importés
+      planSupprimes: [],// numéros de comptes masqués
     };
     ensureShape();
     if (persist) save();
@@ -58,7 +61,11 @@ PNG.store = (function () {
     if (!state.activity) state.activity = [];
     if (!state.societesEdits) state.societesEdits = {};   // {id: {champs modifiés}}
     if (!state.societesAjout) state.societesAjout = [];   // sociétés créées
+    if (!state.planEdits) state.planEdits = {};
+    if (!state.planAjout) state.planAjout = [];
+    if (!state.planSupprimes) state.planSupprimes = [];
     appliquerSocietes();
+    appliquerPlan();
     if (!state.fournisseurs || !state.fournisseurs.length) { state.fournisseurs = []; rebuildFournisseurs(); }
     // champs paiement/drive sur factures anciennes
     state.factures.forEach((f) => {
@@ -107,6 +114,72 @@ PNG.store = (function () {
     log("Société créée", c.raisonSociale);
     save();
     return c;
+  }
+
+  /* ---- Plan comptable : import / édition (persistés) ---------------- */
+  if (!PNG._planBase) PNG._planBase = JSON.parse(JSON.stringify(PNG.planComptable || []));
+  function typeDepuisNum(num) {
+    const n = String(num || "");
+    if (/^6/.test(n)) return "Charge";
+    if (/^7/.test(n)) return "Produit";
+    if (/^1/.test(n)) return "Passif";
+    if (/^40/.test(n)) return "Passif";   // fournisseurs
+    if (/^41/.test(n)) return "Actif";    // clients
+    if (/^[235]/.test(n)) return "Actif";
+    return "Actif";
+  }
+  function appliquerPlan() {
+    let base = JSON.parse(JSON.stringify(PNG._planBase));
+    base = base.filter((p) => !(state.planSupprimes || []).includes(p.num));
+    base.forEach((p) => { if (state.planEdits[p.num]) Object.assign(p, state.planEdits[p.num]); });
+    const nums = new Set(base.map((p) => p.num));
+    (state.planAjout || []).forEach((p) => { if (!nums.has(p.num)) { base.push(p); nums.add(p.num); } });
+    base.sort((a, b) => String(a.num).localeCompare(String(b.num)));
+    PNG.planComptable = base;
+  }
+  function ajouterCompte(champs) {
+    ensureShape();
+    const num = String(champs.num || "").replace(/\s/g, "").trim();
+    if (!num) return null;
+    const libelle = champs.libelle || "Compte " + num;
+    const type = champs.type || typeDepuisNum(num);
+    // si le compte existe déjà (base ou ajout) -> modification
+    if (PNG.planComptable.some((p) => p.num === num)) { return modifierCompte(num, { libelle, type }); }
+    state.planAjout.push({ num, libelle, type });
+    appliquerPlan(); log("Compte ajouté", num + " — " + libelle); save();
+    return { num, libelle, type };
+  }
+  function modifierCompte(num, champs) {
+    ensureShape();
+    state.planEdits[num] = Object.assign(state.planEdits[num] || {}, {});
+    if (champs.libelle != null) state.planEdits[num].libelle = champs.libelle;
+    if (champs.type != null) state.planEdits[num].type = champs.type;
+    // si c'est un compte ajouté manuellement, on modifie aussi dans planAjout
+    const a = (state.planAjout || []).find((p) => p.num === num);
+    if (a) { if (champs.libelle != null) a.libelle = champs.libelle; if (champs.type != null) a.type = champs.type; }
+    appliquerPlan(); log("Compte modifié", num); save();
+    return state.planEdits[num];
+  }
+  function supprimerCompte(num) {
+    ensureShape();
+    state.planAjout = (state.planAjout || []).filter((p) => p.num !== num);
+    if (!state.planSupprimes.includes(num)) state.planSupprimes.push(num);
+    appliquerPlan(); log("Compte masqué", num); save();
+  }
+  /* Import d'un plan comptable : lignes = objets {num/numero/compte, libelle/intitule, type/classe} */
+  function importerPlanComptable(lignes) {
+    ensureShape();
+    let cree = 0, maj = 0;
+    (lignes || []).forEach((l) => {
+      const num = String(l.num || l.numero || l.compte || l.comptecomptable || l.numerocompte || l.numcompte || l.ncompte || l.n || l.code || "").replace(/\s/g, "").trim();
+      if (!num || !/^\d{3,}/.test(num)) return;
+      const libelle = (l.libelle || l.intitule || l.libellecompte || l.intitulecompte || l.nom || l.designation || "").trim() || ("Compte " + num);
+      const type = (l.type || "").trim() || typeDepuisNum(num);
+      if (PNG.planComptable.some((p) => p.num === num)) { modifierCompte(num, { libelle, type }); maj++; }
+      else { state.planAjout.push({ num, libelle, type }); cree++; }
+    });
+    appliquerPlan(); save();
+    return { cree, maj };
   }
 
   /* Détail d'une de NOS sociétés : ses factures fournisseurs + agrégats + série */
@@ -505,14 +578,15 @@ PNG.store = (function () {
     const f = state.factures.find((x) => x.id === id);
     if (!f) return;
     f.statut = "comptabilise";
-    upsertFournisseur(f); // garantit la fiche fournisseur à la comptabilisation
+    const fo = upsertFournisseur(f); // garantit la fiche fournisseur à la comptabilisation
+    const compteTiers = (fo && fo.compteTiers) || "401000";   // compte auxiliaire du fournisseur
     state.journal.push({
       id: "ECR-" + f.id, date: U.todayISO(), piece: f.numeroFacture,
       societeId: f.societeId,
       lignes: [
         { compte: f.compteCharge, libelle: f.fournisseur, debit: f.montantHT, credit: 0 },
         { compte: f.compteTva, libelle: "TVA déductible", debit: f.montantTVA, credit: 0 },
-        { compte: "401000", libelle: "Fournisseur " + f.fournisseur, debit: 0, credit: f.montantTTC },
+        { compte: compteTiers, libelle: "Fournisseur " + f.fournisseur, debit: 0, credit: f.montantTTC },
       ],
     });
     save();
@@ -1043,6 +1117,7 @@ PNG.store = (function () {
     enrichirSiren, appliquerEntreprise, fournisseurExiste, ajouterFournisseur, fournisseurDossiers, rebuildFournisseurs,
     modifierFournisseur, creerFournisseurManuel, supprimerFournisseur, importerFournisseurs, ventilationFactures, fournisseurDetail,
     modifierSociete, creerSociete, societeDetail,
+    ajouterCompte, modifierCompte, supprimerCompte, importerPlanComptable,
     suggestionsPour, rapprocher, annulerRapprochement, rapprochementAuto, synchroniserBanque,
     tresorerie, tresorerieTotale, flux, facturesAValider, tauxRapprochement, tva,
     caParSociete, repartitionFinanceurs, serieFlux,

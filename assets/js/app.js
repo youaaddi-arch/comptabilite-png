@@ -327,7 +327,7 @@
 
   /* --------------------- Délégation d'événements ------------------- */
   document.addEventListener("click", (ev) => {
-    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-navfac],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-saisirstatut],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],[data-editfourn],[data-savefourndossier],[data-suppfourn],[data-newfourndossier],[data-fourndetail],[data-fournfac],[data-pipeetat],[data-regvue],[data-socdetail],[data-editsoc],[data-savesoc],[data-socfac],[data-drivefac],#btnAddSoc,#btnScan,#btnSimEmail,#btnGoogleConnect,#btnGoogleSync,#btnGoogleTestDrive,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#btnSaveOcr2,#btnTestGemini,#regReset,#btnImportFourn,#btnAddFourn,#fournImportConfirm,#closeModal,#modalBack,#btnReset");
+    const t = ev.target.closest("[data-filter],[data-finfilter],[data-open],[data-navfac],[data-valider],[data-compta],[data-paye],[data-savefac],[data-suppfac],[data-pageprev],[data-pagenext],[data-savefourn],[data-verifdg],[data-addfourn],[data-saisirpaie],[data-saisirstatut],[data-verifbanque],[data-siren],[data-newfourn],[data-pickent],[data-rappro],[data-rapprochoix],[data-unrappro],[data-editfourn],[data-savefourndossier],[data-suppfourn],[data-newfourndossier],[data-fourndetail],[data-fournfac],[data-pipeetat],[data-regvue],[data-socdetail],[data-editsoc],[data-savesoc],[data-socfac],[data-drivefac],#btnAddSoc,#btnScan,#btnSimEmail,#btnGoogleConnect,#btnGoogleSync,#btnGoogleTestDrive,#btnAutoRappro,#btnSyncBanque,#btnVerifPaie,#btnDeposeMobile,#mobEnvoyer,#btnFournSearch,#btnSaveOcr,#btnSaveOcr2,#btnTestGemini,#regReset,#btnImportFourn,#btnAddFourn,#fournImportConfirm,#btnAddCompte,#btnImportPlan,#planImportConfirm,[data-editcompte],[data-savecompte],[data-suppcompte],#closeModal,#modalBack,#btnReset");
     if (!t) return;
 
     if (t.id === "modalBack" && ev.target.id === "modalBack") return closeModal();
@@ -590,6 +590,30 @@
       closeModal(); toast(`Import : ${r.cree} créé(s), ${r.maj} mis à jour ✓`, "#059669"); render(); return;
     }
 
+    // ---- Plan comptable : ajouter / éditer / supprimer / importer ----
+    if (t.id === "btnAddCompte") { const w = document.getElementById("modal"); w.innerHTML = V.planModal(null); w.classList.remove("hidden"); return; }
+    if (t.dataset.editcompte) { const w = document.getElementById("modal"); w.innerHTML = V.planModal(t.dataset.editcompte); w.classList.remove("hidden"); return; }
+    if (t.dataset.savecompte) {
+      const v = (i) => { const el = document.getElementById(i); return el ? el.value : ""; };
+      const num = v("cpNum").trim(), lib = v("cpLib").trim(), type = v("cpType");
+      if (!num) { toast("Indiquez un n° de compte", "#dc2626"); return; }
+      if (t.dataset.savecompte === "new") S.ajouterCompte({ num, libelle: lib, type });
+      else S.modifierCompte(t.dataset.savecompte, { libelle: lib, type });
+      closeModal(); toast("Compte enregistré ✓", "#059669"); render(); return;
+    }
+    if (t.dataset.suppcompte) {
+      if (confirm("Masquer le compte " + t.dataset.suppcompte + " ?")) { S.supprimerCompte(t.dataset.suppcompte); toast("Compte masqué 🗑", "#dc2626"); render(); }
+      return;
+    }
+    if (t.id === "btnImportPlan") { const w = document.getElementById("modal"); w.innerHTML = V.planImportModal(); w.classList.remove("hidden"); return; }
+    if (t.id === "planImportConfirm") {
+      const txt = (document.getElementById("planImportText") || {}).value || "";
+      const lignes = parserTableauFournisseurs(txt);
+      if (!lignes.length) { toast("Aucune ligne détectée (collez le tableau avec en-têtes)", "#dc2626"); return; }
+      const r = S.importerPlanComptable(lignes);
+      closeModal(); toast(`Plan importé : ${r.cree} créé(s), ${r.maj} mis à jour ✓`, "#059669"); render(); return;
+    }
+
     if (t.id === "btnReset") { if (confirm("Réinitialiser toutes les données de démonstration ?")) { S.reset(); toast("Données réinitialisées", "#64748b"); render(); } return; }
   });
 
@@ -725,8 +749,8 @@
       clearTimeout(_filtreT); _filtreT = setTimeout(() => { render(); const f = document.getElementById("socQ"); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); } }, 250);
       return;
     }
-    if (el.id === "valQ" || el.id === "reglerQ" || el.id === "rapQ") {
-      if (el.id === "valQ") PNG._valQ = el.value; else if (el.id === "reglerQ") PNG._reglerQ = el.value; else PNG._rapQ = el.value;
+    if (el.id === "valQ" || el.id === "reglerQ" || el.id === "rapQ" || el.id === "planQ") {
+      if (el.id === "valQ") PNG._valQ = el.value; else if (el.id === "reglerQ") PNG._reglerQ = el.value; else if (el.id === "rapQ") PNG._rapQ = el.value; else PNG._planQ = el.value;
       const id = el.id;
       clearTimeout(_filtreT); _filtreT = setTimeout(() => { render(); const f = document.getElementById(id); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); } }, 250);
       return;

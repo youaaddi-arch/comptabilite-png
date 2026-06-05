@@ -869,17 +869,82 @@ PNG.views = (function () {
 
   /* ========================= PLAN COMPTABLE ======================= */
   function plan() {
-    const rows = PNG.planComptable.map((p) => `<tr class="border-t border-slate-100">
+    PNG._planQ = PNG._planQ || "";
+    const q = (PNG._planQ || "").toLowerCase().trim();
+    let list = PNG.planComptable.slice();
+    if (q) list = list.filter((p) => (p.num + " " + p.libelle + " " + p.type).toLowerCase().includes(q));
+    const typeCls = (t) => t === "Charge" ? "bg-red-50 text-red-600" : t === "Produit" ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500";
+    const rows = list.map((p) => `<tr class="border-t border-slate-100 hover:bg-slate-50">
       <td class="py-2.5 pl-4 font-mono text-sm">${e(p.num)}</td><td class="py-2.5 text-sm">${e(p.libelle)}</td>
-      <td class="py-2.5 text-center">${badge(p.type, p.type==="Charge"?"bg-red-50 text-red-600":p.type==="Produit"?"bg-emerald-50 text-emerald-600":"bg-slate-100 text-slate-500")}</td></tr>`).join("");
+      <td class="py-2.5 text-center">${badge(p.type, typeCls(p.type))}</td>
+      <td class="py-2.5 text-center">
+        <button data-editcompte="${e(p.num)}" class="text-blue-600 hover:text-blue-800 text-sm" title="Modifier">✎</button>
+        <button data-suppcompte="${e(p.num)}" class="text-red-400 hover:text-red-600 text-sm ml-2" title="Masquer">🗑</button>
+      </td></tr>`).join("");
+    const par = {};
+    PNG.planComptable.forEach((p) => par[p.type] = (par[p.type] || 0) + 1);
     return `
-      <div class="mb-6"><h1 class="text-2xl font-bold text-slate-800">Plan comptable</h1>
-      <p class="text-slate-500 text-sm">Plan Comptable Général (PCG) — comptes utilisés pour l'affectation automatique</p></div>
+      <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <div><h1 class="text-2xl font-bold text-slate-800">Plan comptable</h1>
+        <p class="text-slate-500 text-sm">${PNG.planComptable.length} comptes · ${Object.entries(par).map(([t,n])=>`${n} ${t}`).join(" · ")}</p></div>
+        <div class="flex gap-2">
+          <button id="btnAddCompte" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">＋ Ajouter un compte</button>
+          <button id="btnImportPlan" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">📥 Importer un plan</button>
+        </div>
+      </div>
+      <div class="mb-3"><input id="planQ" value="${e(PNG._planQ)}" placeholder="🔎 Rechercher un compte (n°, libellé, type)…" class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" /></div>
       <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         <table class="w-full"><thead><tr class="text-xs text-slate-400 text-left bg-slate-50">
-          <th class="font-medium py-2.5 pl-4">N° compte</th><th class="font-medium py-2.5">Libellé</th><th class="font-medium py-2.5 text-center">Type</th></tr></thead>
-          <tbody>${rows}</tbody></table>
+          <th class="font-medium py-2.5 pl-4">N° compte</th><th class="font-medium py-2.5">Libellé</th><th class="font-medium py-2.5 text-center">Type</th><th class="font-medium py-2.5 text-center w-24"></th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="4" class="text-center py-8 text-slate-400">Aucun compte</td></tr>`}</tbody></table>
       </div>`;
+  }
+
+  /* Modale ajout / édition d'un compte du plan comptable */
+  function planModal(num) {
+    const p = num ? PNG.planComptable.find((x) => x.num === num) : null;
+    const types = ["Charge", "Produit", "Actif", "Passif"];
+    const champ = (id, lbl, val, ph, ro) => `<label class="block mb-3"><span class="text-xs font-medium text-slate-500">${lbl}</span>
+      <input id="${id}" value="${e(val||"")}" placeholder="${ph||""}" ${ro?"readonly":""} class="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm ${ro?"bg-slate-50 text-slate-500":""}" /></label>`;
+    return `
+    <div class="fixed inset-0 bg-slate-900/50 z-40 flex items-center justify-center p-4" id="modalBack">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-md">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <h2 class="font-bold text-slate-800">${p ? "Modifier le compte" : "＋ Nouveau compte"}</h2>
+          <button id="closeModal" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+        </div>
+        <div class="p-5">
+          ${champ("cpNum", "N° de compte", p ? p.num : "", "ex. 626100", !!p)}
+          ${champ("cpLib", "Libellé", p ? p.libelle : "", "ex. Frais de télécommunications")}
+          <label class="block mb-4"><span class="text-xs font-medium text-slate-500">Type</span>
+            <select id="cpType" class="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm">
+              ${types.map((t) => `<option value="${t}" ${p && p.type === t ? "selected" : ""}>${t}</option>`).join("")}
+            </select></label>
+          <button data-savecompte="${p ? e(p.num) : "new"}" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">${p ? "Enregistrer" : "Créer le compte"}</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  /* Modale d'import d'un plan comptable (coller un tableau) */
+  function planImportModal() {
+    return `
+    <div class="fixed inset-0 bg-slate-900/50 z-40 flex items-center justify-center p-4" id="modalBack">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <h2 class="font-bold text-slate-800">📥 Importer un plan comptable</h2>
+          <button id="closeModal" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+        </div>
+        <div class="p-5">
+          <p class="text-xs text-slate-500 mb-2">Collez votre plan depuis Excel (avec une ligne d'en-tête). Colonnes reconnues : <code>num</code> (ou compte/numéro), <code>libelle</code> (ou intitulé), <code>type</code> (Charge/Produit/Actif/Passif — sinon déduit du n°).</p>
+          <textarea id="planImportText" rows="9" placeholder="num	libelle	type
+606100	Achats de fournitures	Charge
+626100	Télécommunications	Charge
+706000	Prestations de formation	Produit" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono"></textarea>
+          <button id="planImportConfirm" class="w-full mt-3 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium">✓ Importer les comptes</button>
+        </div>
+      </div>
+    </div>`;
   }
 
   /* ===================== FONCTIONNALITÉS (Pennylane / Yooz) ======== */
@@ -1294,9 +1359,13 @@ PNG.views = (function () {
             ${champ("foSiren", "SIREN", v("siren"))}
             ${champ("foSiret", "SIRET", v("siret"))}
           </div>
-          <div class="grid grid-cols-2 gap-2">
-            <div><label class="block text-[11px] text-slate-400">Compte de charge</label><select id="foCompte" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"><option value="">—</option>${optionsCpt}</select></div>
-            ${champ("foTiers", "Compte tiers (401…)", v("compteTiers"))}
+          <div class="bg-blue-50 border border-blue-100 rounded-xl p-3">
+            <p class="text-[11px] font-semibold text-blue-700 mb-2">Les 2 codes comptables du fournisseur</p>
+            <div class="grid grid-cols-2 gap-2">
+              <div><label class="block text-[11px] text-slate-500">① Compte de charge (classe 6)</label><select id="foCompte" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"><option value="">—</option>${optionsCpt}</select></div>
+              <div><label class="block text-[11px] text-slate-500">② Compte tiers / auxiliaire (401…)</label><input id="foTiers" value="${v("compteTiers")}" placeholder="ex. 401001" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white" /></div>
+            </div>
+            <p class="text-[10px] text-slate-400 mt-1.5">À la comptabilisation : débit du <strong>compte de charge</strong> + TVA, crédit du <strong>compte tiers ${fo && fo.compteTiers ? "(" + e(fo.compteTiers) + ")" : "401…"}</strong>.</p>
           </div>
           <div class="grid grid-cols-2 gap-2">
             ${champ("foCat", "Catégorie", v("categorie"))}
@@ -1662,5 +1731,5 @@ PNG.views = (function () {
       </div>`;
   }
 
-  return { dashboard, dashboardCharts, factures, factureModal, collecte, banque, tvaView, financements, societes, societeModal, societeDetail, societeDetailCharts, plan, fonctionnalites, registre, facturesValidees, facturesRapprochees, aReglerView, facturesFiltre, fournisseurs, fournisseurDetail, fournisseurDetailCharts, fournDossierModal, importFournModal, mobileModal, rapproManuelModal, nouveauFournModal, renderFournResults, ocrSettings };
+  return { dashboard, dashboardCharts, factures, factureModal, collecte, banque, tvaView, financements, societes, societeModal, societeDetail, societeDetailCharts, plan, planModal, planImportModal, fonctionnalites, registre, facturesValidees, facturesRapprochees, aReglerView, facturesFiltre, fournisseurs, fournisseurDetail, fournisseurDetailCharts, fournDossierModal, importFournModal, mobileModal, rapproManuelModal, nouveauFournModal, renderFournResults, ocrSettings };
 })();
